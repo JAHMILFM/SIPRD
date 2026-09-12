@@ -1,13 +1,14 @@
 import { hhmm } from '../lib/planner'
+import { useToast } from '../context/ToastContext'
 
 /**
  * Carga y jornada por camión.
  *
- * Es el panel que pidió el cliente en la reunión: número de paradas y horas
- * estimadas por vehículo, para detectar de un vistazo cuál está saturado y cuál
- * tiene holgura antes de enviar el plan.
+ * Muestra la distribución de carga y horas por vehículo.
+ * Incluye exportación a CSV para reportes de despacho (Heurística #7).
  */
 export default function TruckStats({ plan, jornadaMax }) {
+  const { toast } = useToast()
   const limite = jornadaMax * 60
   const rutas = plan.rutas
 
@@ -19,7 +20,39 @@ export default function TruckStats({ plan, jornadaMax }) {
   const sugerencia =
     holgada && cargada && cargada.minutos - holgada.minutos > 90
       ? `${holgada.id} tiene ${hhmm(limite - holgada.minutos)} libres. Puedes moverle paradas desde ${cargada.id} antes de enviar.`
-      : 'La carga está pareja entre los camiones del escenario.'
+      : 'La carga está distribuida de forma equilibrada entre los camiones del escenario.'
+
+  const exportarCSV = () => {
+    try {
+      const headers = ['Ruta', 'Placa', 'Marca', 'Conductor', 'Paradas', 'Distancia_km', 'Jornada_hhmm', 'Peso_usado_t', 'Peso_max_t', 'Vol_usado_m3', 'Vol_max_m3']
+      const rows = rutas.map(r => [
+        r.id,
+        r.vehiculo.placa,
+        r.vehiculo.marca,
+        `"${r.vehiculo.conductor}"`,
+        r.pedidos.length,
+        r.km.toFixed(1),
+        `"${hhmm(r.minutos)}"`,
+        (r.peso / 1000).toFixed(2),
+        r.vehiculo.pesoMax,
+        r.vol.toFixed(2),
+        r.vehiculo.volMax,
+      ])
+
+      const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n')
+      const encodedUri = encodeURI(csvContent)
+      const link = document.createElement('a')
+      link.setAttribute('href', encodedUri)
+      link.setAttribute('download', `plan_flota_siprd_${plan.n}_vehiculos.csv`)
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+
+      toast.success(`Reporte CSV descargado con éxito (${rutas.length} vehículos).`)
+    } catch {
+      toast.error('No se pudo generar la exportación en este momento.')
+    }
+  }
 
   const barra = (usado, max, tono) => {
     const pct = Math.min(100, (usado / max) * 100)
@@ -40,7 +73,15 @@ export default function TruckStats({ plan, jornadaMax }) {
           <p>Revisa que ningún camión pase de {jornadaMax} horas ni supere su capacidad antes de enviar el plan.</p>
         </div>
         <div className="btns">
-          <button className="btn out">⇩ Exportar tabla</button>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={exportarCSV}
+            title="Descargar archivo CSV compatible con Excel"
+          >
+            <span>📥</span>
+            <span>Exportar CSV</span>
+          </button>
         </div>
       </div>
 
@@ -48,9 +89,14 @@ export default function TruckStats({ plan, jornadaMax }) {
         <table>
           <thead>
             <tr>
-              <th>VEHÍCULO</th><th>CONDUCTOR</th>
-              <th className="num">PARADAS</th><th className="num">DISTANCIA</th><th>JORNADA ESTIMADA</th>
-              <th>PESO USADO (t)</th><th>VOLUMEN USADO (m³)</th><th>ESTADO</th>
+              <th>VEHÍCULO</th>
+              <th>CONDUCTOR</th>
+              <th className="num">PARADAS</th>
+              <th className="num">DISTANCIA</th>
+              <th>JORNADA ESTIMADA</th>
+              <th>PESO USADO (t)</th>
+              <th>VOLUMEN USADO (m³)</th>
+              <th>ESTADO</th>
             </tr>
           </thead>
           <tbody>
@@ -59,12 +105,12 @@ export default function TruckStats({ plan, jornadaMax }) {
               const excede = r.minutos > limite
               const holgado = r.minutos < limite * 0.75
               const estado = excede
-                ? <span className="chip c-hi">Excede jornada</span>
+                ? <span className="chip c-hi">⚠️ Excede jornada</span>
                 : pctPeso >= 92
-                ? <span className="chip c-md">Al límite de peso</span>
+                ? <span className="chip c-md">⚠️ Al límite de peso</span>
                 : holgado
-                ? <span className="chip c-md">Con holgura</span>
-                : <span className="chip c-gn">Óptimo</span>
+                ? <span className="chip c-md">ℹ️ Con holgura</span>
+                : <span className="chip c-gn">✓ Óptimo</span>
 
               return (
                 <tr key={r.id}>
@@ -92,7 +138,7 @@ export default function TruckStats({ plan, jornadaMax }) {
         <span>
           {rutas.length} rutas · {total} paradas · {plan.kmTotal.toFixed(1)} km · jornada promedio {hhmm(promedio)}
         </span>
-        <span style={{ color: '#B45309' }}>{sugerencia}</span>
+        <span style={{ color: '#B45309', fontWeight: 500 }}>{sugerencia}</span>
       </div>
     </div>
   )
