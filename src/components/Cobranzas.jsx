@@ -45,21 +45,30 @@ export default function Cobranzas() {
   const [motivoRechazo, setMotivoRechazo] = useState('')
   const [busca, setBusca]           = useState('')
 
-  // Métricas
-  const pendientes  = cobros.filter(c => c.estado === 'pendiente').length
-  const validados   = cobros.filter(c => c.estado === 'validado').length
-  const rechazados  = cobros.filter(c => c.estado === 'rechazado').length
-  const montoVal    = cobros.filter(c => c.estado === 'validado').reduce((s, c) => s + c.monto, 0)
-  const montoPend   = cobros.filter(c => c.estado === 'pendiente').reduce((s, c) => s + c.monto, 0)
-
-  const filtrados = cobros.filter(c => {
-    if (filtro !== 'todos' && c.estado !== filtro) return false
-    if (busca) {
-      const q = busca.toLowerCase()
-      return c.cliente.toLowerCase().includes(q) || c.conductor.toLowerCase().includes(q) || c.pedido.includes(q)
+  // Métricas calculadas
+  const { pendientes, validados, rechazados, montoVal, montoPend } = useMemo(() => {
+    let p = 0, v = 0, r = 0, mV = 0, mP = 0
+    for (const c of cobros) {
+      if (c.estado === 'pendiente') { p++; mP += c.monto }
+      else if (c.estado === 'validado') { v++; mV += c.monto }
+      else if (c.estado === 'rechazado') { r++ }
     }
-    return true
-  })
+    return { pendientes: p, validados: v, rechazados: r, montoVal: mV, montoPend: mP }
+  }, [cobros])
+
+  const filtrados = useMemo(() => {
+    return cobros.filter(c => {
+      if (filtro !== 'todos' && c.estado !== filtro) return false
+      if (busca) {
+        const q = busca.toLowerCase().trim()
+        const matchCli = (c.cliente ?? '').toLowerCase().includes(q)
+        const matchCon = (c.conductor ?? '').toLowerCase().includes(q)
+        const matchPed = String(c.pedido ?? '').includes(q)
+        return matchCli || matchCon || matchPed
+      }
+      return true
+    })
+  }, [cobros, filtro, busca])
 
   // ── Validación con soporte de Deshacer (Heurística #3) ─────────
   const validar = (id, nota = '') => {
@@ -119,14 +128,14 @@ export default function Cobranzas() {
       const headers = ['Pedido', 'Ruta', 'Repartidor', 'Cliente', 'Monto_PEN', 'Tipo', 'Hora_Reporte', 'Estado', 'Nota']
       const rows = filtrados.map(c => [
         `"#${c.pedido}"`,
-        c.ruta,
-        `"${c.conductor}"`,
-        `"${c.cliente}"`,
+        `"${c.ruta}"`,
+        `"${String(c.conductor ?? '').replace(/"/g, '""')}"`,
+        `"${String(c.cliente ?? '').replace(/"/g, '""')}"`,
         c.monto,
         c.tipo,
-        c.hora,
+        `"${c.hora ?? ''}"`,
         c.estado,
-        `"${c.nota || ''}"`
+        `"${String(c.nota || '').replace(/"/g, '""')}"`
       ])
 
       const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n')
@@ -418,6 +427,7 @@ export default function Cobranzas() {
                           className="btn btn-secondary"
                           style={{ padding: '4px 10px', fontSize: 11 }}
                           title="Ver detalle de cobro"
+                          aria-label={`Ver detalle de cobro de ${c.cliente}`}
                         >
                           Ver
                         </button>
@@ -429,6 +439,7 @@ export default function Cobranzas() {
                               className="btn btn-success"
                               style={{ padding: '4px 10px', fontSize: 11 }}
                               title="Aprobar pago"
+                              aria-label={`Aprobar pago de S/ ${c.monto.toLocaleString('es-PE')} de ${c.cliente}`}
                             >
                               ✓
                             </button>
@@ -438,6 +449,7 @@ export default function Cobranzas() {
                               className="btn btn-danger"
                               style={{ padding: '4px 8px', fontSize: 11 }}
                               title="Rechazar pago con motivo"
+                              aria-label={`Rechazar pago de S/ ${c.monto.toLocaleString('es-PE')} de ${c.cliente}`}
                             >
                               ✕
                             </button>

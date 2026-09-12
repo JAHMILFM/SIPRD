@@ -1,4 +1,5 @@
 import { hhmm } from '../lib/planner'
+import { useToast } from '../context/ToastContext'
 
 // Mapa esquemático. En producción se sustituye por react-leaflet + OpenStreetMap
 // y las polilíneas vienen de la geometría que devuelve OSRM; la forma de los
@@ -35,6 +36,8 @@ const DISTRITOS = [
 ]
 
 export default function RouteMap({ plan }) {
+  const { toast } = useToast()
+
   return (
     <div className="card maph">
       <svg viewBox="0 0 460 520" style={{ width: '100%', display: 'block', borderRadius: 11 }} role="img"
@@ -77,7 +80,14 @@ export default function RouteMap({ plan }) {
         </text>
       </svg>
 
-      <div className="mapbtn">◈ Ver capas</div>
+      <button
+        type="button"
+        className="mapbtn"
+        onClick={() => toast.info('Capas activas: Rutas de flota, Zonas geográficas y Almacén Lurín.')}
+        aria-label="Ver capas del mapa"
+      >
+        ◈ Ver capas
+      </button>
 
       <div className="legend">
         <b>Rutas del escenario</b>
@@ -91,3 +101,4 @@ export default function RouteMap({ plan }) {
     </div>
   )
 }
+

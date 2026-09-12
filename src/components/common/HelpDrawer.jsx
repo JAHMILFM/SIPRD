@@ -8,13 +8,23 @@ export default function HelpDrawer({ isOpen, onClose }) {
   const [tab, setTab] = useState('guia') // 'guia' | 'atajos' | 'heurísticas'
 
   useEffect(() => {
+    if (!isOpen) return
+
     const handleKey = (e) => {
-      if (e.key === 'Escape' && isOpen) {
+      if (e.key === 'Escape') {
+        e.stopPropagation()
         onClose()
       }
     }
+
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
     window.addEventListener('keydown', handleKey)
-    return () => window.removeEventListener('keydown', handleKey)
+    return () => {
+      document.body.style.overflow = prevOverflow
+      window.removeEventListener('keydown', handleKey)
+    }
   }, [isOpen, onClose])
 
   if (!isOpen) return null

@@ -9,7 +9,7 @@
 // (POST /api/planes/optimizar) que corre el motor real sobre la matriz OSRM.
 // La forma del resultado se mantiene igual para no tocar la UI.
 
-import { VEHICULOS, COLORES_RUTA } from '../data/mock'
+import { VEHICULOS, COLORES_RUTA } from '../data/mock.js'
 
 // El 27/08/2026 es jueves.
 export const DIA_SEMANA = 4
@@ -20,17 +20,18 @@ const KM_ZONA = { Norte: 4.8, Este: 4.1, Sur: 2.9, Centro: 3.4 }
 const VELOCIDAD = 18 // km/h promedio en reparto urbano de Lima
 
 function hash(id) {
+  const str = String(id ?? '')
   let h = 0
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) % 997
+  for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) % 997
   return h / 997
 }
 
 /** Pedidos que no se pueden entregar hoy porque el cliente no atiende. */
-export function separarReprogramados(pedidos, dia = DIA_SEMANA) {
+export function separarReprogramados(pedidos = [], dia = DIA_SEMANA) {
   const planificables = []
   const reprogramados = []
   for (const p of pedidos) {
-    if (p.dias && !p.dias.includes(dia)) {
+    if (Array.isArray(p.dias) && p.dias.length > 0 && !p.dias.includes(dia)) {
       const siguiente = proximoDiaHabil(p.dias, dia)
       reprogramados.push({ ...p, motivo: `No atiende ${NOMBRE_DIA[dia]}`, mueveA: NOMBRE_DIA[siguiente] })
     } else {
@@ -41,6 +42,7 @@ export function separarReprogramados(pedidos, dia = DIA_SEMANA) {
 }
 
 function proximoDiaHabil(dias, desde) {
+  if (!Array.isArray(dias) || dias.length === 0) return desde
   for (let i = 1; i <= 7; i++) {
     const d = (desde + i) % 7
     if (dias.includes(d)) return d
@@ -49,8 +51,10 @@ function proximoDiaHabil(dias, desde) {
 }
 
 function costoPedido(p) {
-  const km = KM_ZONA[p.zona] * (0.6 + hash(p.id) * 1.1)
-  return { km, viaje: (km / VELOCIDAD) * 60, servicio: p.servicio }
+  const baseKm = KM_ZONA[p.zona] ?? 3.4
+  const km = baseKm * (0.6 + hash(p.id) * 1.1)
+  const servicio = Number(p.servicio) || 15
+  return { km, viaje: (km / VELOCIDAD) * 60, servicio }
 }
 
 /**
@@ -58,12 +62,13 @@ function costoPedido(p) {
  * Heurística: pedidos ordenados por carga descendente, cada uno al vehículo con
  * menor jornada acumulada que aún tenga capacidad de peso y volumen.
  */
-export function planificar(pedidos, n) {
+export function planificar(pedidos = [], n = 1) {
   // TODO BACKEND: POST /api/planes/optimizar
   // Esta función entera se reemplazará por una llamada a la API en producción.
   // La UI seguirá consumiendo el mismo formato de respuesta.
 
-  const flota = VEHICULOS.slice(0, n)
+  const safeN = Math.max(1, Math.min(n, VEHICULOS.length))
+  const flota = VEHICULOS.slice(0, safeN)
   const rutas = flota.map((v, i) => ({
     id: `R${i + 1}`,
     color: COLORES_RUTA[i % COLORES_RUTA.length],
@@ -77,22 +82,27 @@ export function planificar(pedidos, n) {
 
   const orden = [...pedidos].sort((a, b) => {
     const pr = { Alta: 0, Media: 1, Baja: 2 }
-    if (pr[a.prioridad] !== pr[b.prioridad]) return pr[a.prioridad] - pr[b.prioridad]
-    return b.peso - a.peso
+    const pa = pr[a.prioridad] ?? 3
+    const pb = pr[b.prioridad] ?? 3
+    if (pa !== pb) return pa - pb
+    return (b.peso ?? 0) - (a.peso ?? 0)
   })
 
   const sinAsignar = []
 
   for (const p of orden) {
     const c = costoPedido(p)
+    const pPesoT = (p.peso ?? 0) / 1000
+    const pVolM3 = (p.vol ?? 0) * 3.2
+
     const aptas = rutas
-      .filter((r) => r.peso + p.peso / 1000 <= r.vehiculo.pesoMax && r.vol + p.vol * 3.2 <= r.vehiculo.volMax)
+      .filter((r) => r.peso + pPesoT <= r.vehiculo.pesoMax && r.vol + pVolM3 <= r.vehiculo.volMax)
       .sort((a, b) => a.minutos - b.minutos)
 
     if (aptas.length === 0) {
       // RF-06: identificar qué restricción impidió la asignación
-      const sinPeso = rutas.every(r => r.peso + p.peso / 1000 > r.vehiculo.pesoMax)
-      const sinVol  = rutas.every(r => r.vol  + p.vol  * 3.2 > r.vehiculo.volMax)
+      const sinPeso = rutas.every(r => r.peso + pPesoT > r.vehiculo.pesoMax)
+      const sinVol  = rutas.every(r => r.vol  + pVolM3 > r.vehiculo.volMax)
       const motivo  = sinPeso && sinVol ? 'Excede peso y volumen disponibles en toda la flota'
                     : sinPeso           ? 'Excede el peso máximo de todos los vehículos'
                     :                    'Excede el volumen máximo disponible'
@@ -101,8 +111,8 @@ export function planificar(pedidos, n) {
     }
     const r = aptas[0]
     r.pedidos.push({ ...p, ruta: r.id, color: r.color, km: c.km })
-    r.peso += p.peso / 1000
-    r.vol += p.vol * 3.2
+    r.peso += pPesoT
+    r.vol += pVolM3
     r.km += c.km
     r.minutos += c.viaje + c.servicio
   }
@@ -111,8 +121,8 @@ export function planificar(pedidos, n) {
   // es el orden de visita que verá el conductor.
   for (const r of rutas) {
     r.pedidos.sort((a, b) => {
-      const ha = a.ventana === 'Todo el día' ? 99 : parseInt(a.ventana, 10)
-      const hb = b.ventana === 'Todo el día' ? 99 : parseInt(b.ventana, 10)
+      const ha = a.ventana === 'Todo el día' ? 99 : parseInt(a.ventana, 10) || 99
+      const hb = b.ventana === 'Todo el día' ? 99 : parseInt(b.ventana, 10) || 99
       return ha - hb
     })
   }
@@ -126,15 +136,19 @@ export function planificar(pedidos, n) {
       const c = costoPedido(p)
       const llegada = cursor + c.viaje
       cursor = llegada + p.servicio
-      if (p.ventana !== 'Todo el día') {
-        const partes = p.ventana.split('–')
-        const [hf, mf] = partes[1].split(':').map(Number)
-        const cierre = hf * 60 + mf
-        if (llegada > cierre) {
-          p.ventanaConflicto = true
-          const hStr = String(Math.floor(llegada / 60)).padStart(2, '0')
-          const mStr = String(Math.round(llegada % 60)).padStart(2, '0')
-          p.conflictoDetalle = `Llegaría ~${hStr}:${mStr} · Ventana cierra ${partes[1]}`
+      if (p.ventana && p.ventana !== 'Todo el día') {
+        const partes = p.ventana.split(/[-–]/)
+        if (partes.length >= 2 && partes[1].includes(':')) {
+          const [hf, mf] = partes[1].trim().split(':').map(Number)
+          if (!isNaN(hf) && !isNaN(mf)) {
+            const cierre = hf * 60 + mf
+            if (llegada > cierre) {
+              p.ventanaConflicto = true
+              const hStr = String(Math.floor(llegada / 60)).padStart(2, '0')
+              const mStr = String(Math.round(llegada % 60)).padStart(2, '0')
+              p.conflictoDetalle = `Llegaría ~${hStr}:${mStr} · Ventana cierra ${partes[1].trim()}`
+            }
+          }
         }
       }
     }
@@ -157,7 +171,7 @@ export function planificar(pedidos, n) {
   )
 
   return {
-    n,
+    n: safeN,
     rutas: activas,
     sinAsignar,
     conflictos,
@@ -170,6 +184,7 @@ export function planificar(pedidos, n) {
 }
 
 export function hhmm(min) {
+  if (!min || isNaN(min) || min < 0) return '0 h 00 m'
   const h = Math.floor(min / 60)
   const m = Math.round(min % 60)
   return `${h} h ${String(m).padStart(2, '0')} m`

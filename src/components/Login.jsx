@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import Modal from './common/Modal'
 
@@ -48,6 +48,17 @@ export default function Login() {
   const [modalTerminos, setModalTerminos] = useState(false)
   const [tocado, setTocado] = useState({ usuario: false, clave: false })
 
+  const isMountedRef = useRef(true)
+  const timerRef = useRef(null)
+
+  useEffect(() => {
+    isMountedRef.current = true
+    return () => {
+      isMountedRef.current = false
+      if (timerRef.current) clearTimeout(timerRef.current)
+    }
+  }, [])
+
   const handleSubmit = (e) => {
     e.preventDefault()
     setTocado({ usuario: true, clave: true })
@@ -65,12 +76,15 @@ export default function Login() {
     setCargando(true)
     setError('')
 
-    setTimeout(() => {
+    if (timerRef.current) clearTimeout(timerRef.current)
+    timerRef.current = setTimeout(() => {
       const ok = login(usuario.trim(), clave)
-      if (!ok) {
-        setError('Usuario o contraseña no válidos. Verifica tus credenciales de acceso.')
+      if (isMountedRef.current) {
+        if (!ok) {
+          setError('Usuario o contraseña no válidos. Verifica tus credenciales de acceso.')
+        }
+        setCargando(false)
       }
-      setCargando(false)
     }, 600)
   }
 

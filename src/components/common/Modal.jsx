@@ -16,14 +16,41 @@ export default function Modal({
   hideCloseBtn = false,
 }) {
   const modalRef = useRef(null)
+  const previousActiveElement = useRef(null)
 
   useEffect(() => {
     if (!isOpen) return
+
+    previousActiveElement.current = document.activeElement
 
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') {
         e.stopPropagation()
         onClose?.()
+        return
+      }
+
+      // Atrapamiento de foco (Focus Trap WCAG 2.1)
+      if (e.key === 'Tab' && modalRef.current) {
+        const focusableElements = modalRef.current.querySelectorAll(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        )
+        if (focusableElements.length === 0) return
+
+        const firstElement = focusableElements[0]
+        const lastElement = focusableElements[focusableElements.length - 1]
+
+        if (e.shiftKey) {
+          if (document.activeElement === firstElement) {
+            e.preventDefault()
+            lastElement.focus()
+          }
+        } else {
+          if (document.activeElement === lastElement) {
+            e.preventDefault()
+            firstElement.focus()
+          }
+        }
       }
     }
 
@@ -34,17 +61,24 @@ export default function Modal({
     window.addEventListener('keydown', handleKeyDown)
 
     // Enfocar primer elemento interactivo o el modal
-    setTimeout(() => {
+    const focusTimer = setTimeout(() => {
       if (modalRef.current) {
-        const focusable = modalRef.current.querySelector('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')
+        const focusable = modalRef.current.querySelector(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        )
         if (focusable) focusable.focus()
         else modalRef.current.focus()
       }
     }, 50)
 
     return () => {
+      clearTimeout(focusTimer)
       document.body.style.overflow = prevOverflow
       window.removeEventListener('keydown', handleKeyDown)
+      // Retornar el foco al elemento que abrió el modal
+      if (previousActiveElement.current && typeof previousActiveElement.current.focus === 'function') {
+        previousActiveElement.current.focus()
+      }
     }
   }, [isOpen, onClose])
 

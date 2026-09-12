@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { RUTAS_ACTIVAS } from '../data/mockRutas'
 import { useAuth } from '../context/AuthContext'
 import { useAudit } from '../context/AuditContext'
@@ -33,14 +33,22 @@ export default function Rutas() {
   const { log }     = useAudit()
   const { toast }   = useToast()
 
+  const recalcTimerRef = useRef(null)
+
+  useEffect(() => {
+    return () => {
+      if (recalcTimerRef.current) clearTimeout(recalcTimerRef.current)
+    }
+  }, [])
+
   const [rutas, setRutas] = useState(() =>
     RUTAS_ACTIVAS.map(r => ({ ...r, paradas: r.paradas.map(p => ({ ...p })) }))
   )
-  const [rutaActiva, setRutaActiva] = useState(rutas[0].id)
+  const [rutaActiva, setRutaActiva] = useState(() => rutas[0]?.id ?? 'R1')
   const [guardado, setGuardado]     = useState(false)
   const [filtroEstado, setFiltroEstado] = useState('todos') // 'todos' | 'pendiente' | 'en_camino' | 'entregado'
 
-  const ruta = rutas.find(r => r.id === rutaActiva)
+  const ruta = rutas.find(r => r.id === rutaActiva) ?? rutas[0]
 
   // ── helpers con soporte de Deshacer (Heurística #3) ───────────
   const mutarRuta = (fn) => {
@@ -50,12 +58,19 @@ export default function Rutas() {
     setGuardado(false)
   }
 
-  const subir = (idx) => {
+  const subir = (paradaId) => {
     const estadoPrevio = [...ruta.paradas]
     let logP = null
+    let oldPos = 0
+    let newPos = 0
 
     mutarRuta(ps => {
+      const idx = ps.findIndex(p => p.id === paradaId)
+      // No mover si es primera o si la parada anterior ya fue entregada
+      if (idx <= 0 || ps[idx - 1].estado === 'entregado') return ps
       logP = ps[idx]
+      oldPos = idx + 1
+      newPos = idx
       const a = [...ps];
       [a[idx - 1], a[idx]] = [a[idx], a[idx - 1]]
       return a.map((p, i) => ({ ...p, orden: i + 1 }))
@@ -63,7 +78,7 @@ export default function Rutas() {
 
     if (logP) {
       log(usuario, 'Rutas', 'Reordenó parada (subió)', `${logP.cliente} · ${rutaActiva}`)
-      toast.info(`Parada #${idx + 1} (${logP.cliente}) movida a posición #${idx}`, {
+      toast.info(`Parada #${oldPos} (${logP.cliente}) movida a posición #${newPos}`, {
         duration: 5000,
         action: {
           label: 'Deshacer',
@@ -76,12 +91,19 @@ export default function Rutas() {
     }
   }
 
-  const bajar = (idx) => {
+  const bajar = (paradaId) => {
     const estadoPrevio = [...ruta.paradas]
     let logP = null
+    let oldPos = 0
+    let newPos = 0
 
     mutarRuta(ps => {
+      const idx = ps.findIndex(p => p.id === paradaId)
+      // No mover si es la última o si la parada posterior está bloqueada/entregada
+      if (idx < 0 || idx >= ps.length - 1 || ps[idx + 1].estado === 'entregado') return ps
       logP = ps[idx]
+      oldPos = idx + 1
+      newPos = idx + 2
       const a = [...ps];
       [a[idx], a[idx + 1]] = [a[idx + 1], a[idx]]
       return a.map((p, i) => ({ ...p, orden: i + 1 }))
@@ -89,7 +111,7 @@ export default function Rutas() {
 
     if (logP) {
       log(usuario, 'Rutas', 'Reordenó parada (bajó)', `${logP.cliente} · ${rutaActiva}`)
-      toast.info(`Parada #${idx + 1} (${logP.cliente}) movida a posición #${idx + 2}`, {
+      toast.info(`Parada #${oldPos} (${logP.cliente}) movida a posición #${newPos}`, {
         duration: 5000,
         action: {
           label: 'Deshacer',
@@ -144,7 +166,8 @@ export default function Rutas() {
 
   const recalcularPendientes = () => {
     toast.info('Recalculando secuencia óptima para las paradas pendientes…', { duration: 1500 })
-    setTimeout(() => {
+    if (recalcTimerRef.current) clearTimeout(recalcTimerRef.current)
+    recalcTimerRef.current = setTimeout(() => {
       toast.success('Secuencia de paradas pendientes optimizada respetando las entregas realizadas.')
     }, 1500)
   }
@@ -153,7 +176,7 @@ export default function Rutas() {
   const ent = ruta.paradas.filter(p => p.estado === 'entregado').length
   const enc = ruta.paradas.filter(p => p.estado === 'en_camino').length
   const pen = ruta.paradas.filter(p => p.estado === 'pendiente').length
-  const pct = Math.round((ent / ruta.paradas.length) * 100)
+  const pct = ruta.paradas.length ? Math.round((ent / ruta.paradas.length) * 100) : 0
 
   const paradasVisibles = ruta.paradas.filter(p => {
     if (filtroEstado === 'todos') return true
@@ -286,9 +309,13 @@ export default function Rutas() {
               </tr>
             </thead>
             <tbody>
-              {paradasVisibles.map((p, idx) => {
+              {paradasVisibles.map((p) => {
                 const bloq = p.bloqueado
                 const inmutable = p.estado === 'entregado'
+                const realIdx = ruta.paradas.findIndex(item => item.id === p.id)
+                const canSubir = realIdx > 0 && ruta.paradas[realIdx - 1]?.estado !== 'entregado'
+                const canBajar = realIdx >= 0 && realIdx < ruta.paradas.length - 1 && ruta.paradas[realIdx + 1]?.estado !== 'entregado'
+
                 return (
                   <tr key={p.id} style={{ opacity: inmutable ? .65 : 1, background: bloq ? '#fff7f7' : undefined }}>
                     <td style={{ fontWeight: 800, color: ruta.color, textAlign: 'center', fontSize: 13 }}>{p.orden}</td>
@@ -310,28 +337,28 @@ export default function Rutas() {
                         <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
                           <button
                             type="button"
-                            title={`Mover parada de ${p.cliente} hacia arriba`}
+                            title={canSubir ? `Mover parada de ${p.cliente} hacia arriba` : 'No se puede subir más'}
                             aria-label={`Subir parada de ${p.cliente}`}
-                            disabled={idx === 0 || inmutable}
-                            onClick={() => subir(idx)}
+                            disabled={!canSubir}
+                            onClick={() => subir(p.id)}
                             style={{
                               width: 28, height: 28, borderRadius: 6,
                               border: '1px solid #cbd5e1', background: '#fff',
-                              fontSize: 13, cursor: 'pointer', display: 'grid', placeItems: 'center'
+                              fontSize: 13, cursor: canSubir ? 'pointer' : 'not-allowed', display: 'grid', placeItems: 'center'
                             }}
                           >
                             ↑
                           </button>
                           <button
                             type="button"
-                            title={`Mover parada de ${p.cliente} hacia abajo`}
+                            title={canBajar ? `Mover parada de ${p.cliente} hacia abajo` : 'No se puede bajar más'}
                             aria-label={`Bajar parada de ${p.cliente}`}
-                            disabled={idx === ruta.paradas.length - 1}
-                            onClick={() => bajar(idx)}
+                            disabled={!canBajar}
+                            onClick={() => bajar(p.id)}
                             style={{
                               width: 28, height: 28, borderRadius: 6,
                               border: '1px solid #cbd5e1', background: '#fff',
-                              fontSize: 13, cursor: 'pointer', display: 'grid', placeItems: 'center'
+                              fontSize: 13, cursor: canBajar ? 'pointer' : 'not-allowed', display: 'grid', placeItems: 'center'
                             }}
                           >
                             ↓

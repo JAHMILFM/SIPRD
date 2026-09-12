@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { RUTAS_ACTIVAS } from '../data/mockRutas'
 
 /**
@@ -11,33 +11,50 @@ export default function Inicio() {
   const [filtroActividad, setFiltroActividad] = useState('todas')
 
   // ── métricas calculadas desde las rutas activas ──────────────
-  const totalRutas   = RUTAS_ACTIVAS.length
-  const totalParadas = RUTAS_ACTIVAS.reduce((s, r) => s + r.paradas.length, 0)
-  const entregados   = RUTAS_ACTIVAS.reduce((s, r) => s + r.paradas.filter(p => p.estado === 'entregado').length, 0)
-  const enCamino     = RUTAS_ACTIVAS.reduce((s, r) => s + r.paradas.filter(p => p.estado === 'en_camino').length, 0)
-  const pendientes   = RUTAS_ACTIVAS.reduce((s, r) => s + r.paradas.filter(p => p.estado === 'pendiente').length, 0)
-  const montoTotal   = RUTAS_ACTIVAS.reduce((s, r) => s + r.paradas.reduce((ss, p) => ss + p.monto, 0), 0)
-  const pct = Math.round((entregados / totalParadas) * 100)
+  const { totalRutas, totalParadas, entregados, enCamino, pendientes, montoTotal, pct, KPI } = useMemo(() => {
+    const totRutas = RUTAS_ACTIVAS.length
+    const totParadas = RUTAS_ACTIVAS.reduce((s, r) => s + r.paradas.length, 0)
+    const ent = RUTAS_ACTIVAS.reduce((s, r) => s + r.paradas.filter(p => p.estado === 'entregado').length, 0)
+    const enc = RUTAS_ACTIVAS.reduce((s, r) => s + r.paradas.filter(p => p.estado === 'en_camino').length, 0)
+    const pen = RUTAS_ACTIVAS.reduce((s, r) => s + r.paradas.filter(p => p.estado === 'pendiente').length, 0)
+    const monto = RUTAS_ACTIVAS.reduce((s, r) => s + r.paradas.reduce((ss, p) => ss + (p.monto || 0), 0), 0)
+    const porcentaje = totParadas > 0 ? Math.round((ent / totParadas) * 100) : 0
 
-  const KPI = [
-    { label: 'Pedidos del día', valor: totalParadas, color: '#2563EB', bg: '#dbeafe', icon: '📦', desc: 'Total programado para reparto hoy' },
-    { label: 'Entregados', valor: entregados, color: '#16A34A', bg: '#dcfce7', icon: '✓', desc: 'Confirmados por cliente y conductor' },
-    { label: 'En camino', valor: enCamino, color: '#d97706', bg: '#fef3c7', icon: '🚚', desc: 'En tránsito hacia el cliente' },
-    { label: 'Pendientes', valor: pendientes, color: '#64748b', bg: '#f1f5f9', icon: '⏳', desc: 'Próximos según secuencia' },
-    { label: 'Rutas activas', valor: totalRutas, color: '#9333EA', bg: '#f3e8ff', icon: '🗺', desc: 'Vehículos despachados de Lurín' },
-    { label: 'Monto en ruta', valor: `S/ ${montoTotal.toLocaleString('es-PE')}`, color: '#0891B2', bg: '#e0f2fe', icon: '💰', desc: 'Total a recaudar en la jornada' },
-  ]
+    const kpiList = [
+      { label: 'Pedidos del día', valor: totParadas, color: '#2563EB', bg: '#dbeafe', icon: '📦', desc: 'Total programado para reparto hoy' },
+      { label: 'Entregados', valor: ent, color: '#16A34A', bg: '#dcfce7', icon: '✓', desc: 'Confirmados por cliente y conductor' },
+      { label: 'En camino', valor: enc, color: '#d97706', bg: '#fef3c7', icon: '🚚', desc: 'En tránsito hacia el cliente' },
+      { label: 'Pendientes', valor: pen, color: '#64748b', bg: '#f1f5f9', icon: '⏳', desc: 'Próximos según secuencia' },
+      { label: 'Rutas activas', valor: totRutas, color: '#9333EA', bg: '#f3e8ff', icon: '🗺', desc: 'Vehículos despachados de Lurín' },
+      { label: 'Monto en ruta', valor: `S/ ${monto.toLocaleString('es-PE')}`, color: '#0891B2', bg: '#e0f2fe', icon: '💰', desc: 'Total a recaudar en la jornada' },
+    ]
+
+    return {
+      totalRutas: totRutas,
+      totalParadas: totParadas,
+      entregados: ent,
+      enCamino: enc,
+      pendientes: pen,
+      montoTotal: monto,
+      pct: porcentaje,
+      KPI: kpiList
+    }
+  }, [])
 
   // ── actividad reciente ────────────────────────────────────────
-  const actividad = RUTAS_ACTIVAS.flatMap(r =>
-    r.paradas
-      .filter(p => p.estado === 'entregado')
-      .map(p => ({ ...p, conductor: r.vehiculo.conductor, ruta: r.id, color: r.color }))
-  ).sort((a, b) => (b.horaReal ?? '').localeCompare(a.horaReal ?? ''))
+  const actividad = useMemo(() => {
+    return RUTAS_ACTIVAS.flatMap(r =>
+      r.paradas
+        .filter(p => p.estado === 'entregado')
+        .map(p => ({ ...p, conductor: r.vehiculo.conductor, ruta: r.id, color: r.color }))
+    ).sort((a, b) => String(b.horaReal ?? '').localeCompare(String(a.horaReal ?? '')))
+  }, [])
 
-  const actividadFiltrada = filtroActividad === 'todas'
-    ? actividad.slice(0, 8)
-    : actividad.filter(a => a.ruta === filtroActividad).slice(0, 8)
+  const actividadFiltrada = useMemo(() => {
+    return filtroActividad === 'todas'
+      ? actividad.slice(0, 8)
+      : actividad.filter(a => a.ruta === filtroActividad).slice(0, 8)
+  }, [actividad, filtroActividad])
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -176,7 +193,7 @@ export default function Inicio() {
           </div>
           <div style={{ padding: '4px 0' }}>
             {actividadFiltrada.map((a, i) => (
-              <div key={i} style={{ display: 'flex', gap: 10, padding: '10px 16px', borderBottom: '1px solid #f1f4f8', alignItems: 'center' }}>
+              <div key={a.id || `${a.ruta}-${i}`} style={{ display: 'flex', gap: 10, padding: '10px 16px', borderBottom: '1px solid #f1f4f8', alignItems: 'center' }}>
                 <div style={{ width: 32, height: 32, borderRadius: 8, background: a.color + '18', display: 'grid', placeItems: 'center', fontSize: 15, flex: '0 0 auto', color: a.color, fontWeight: 700 }}>
                   ✓
                 </div>

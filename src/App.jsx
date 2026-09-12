@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react'
+import { useMemo, useState, useEffect, useRef } from 'react'
 import Sidebar       from './components/Sidebar'
 import TopBar        from './components/TopBar'
 import ParamsBar     from './components/ParamsBar'
@@ -194,13 +194,34 @@ function AppInterna({ usuario, puede, puedeAprobar, log }) {
 
   const plan = escenarios.find((e) => e.n === seleccion) ?? escenarios[0]
 
+  const recalcTimerRef = useRef(null)
+
+  useEffect(() => {
+    return () => {
+      if (recalcTimerRef.current) clearTimeout(recalcTimerRef.current)
+    }
+  }, [])
+
   const recalcular = () => {
     setCalculando(true)
     toast.info('Optimizando reparto con heurística y ventanas horarias…', { duration: 1400 })
-    setTimeout(() => {
+    if (recalcTimerRef.current) clearTimeout(recalcTimerRef.current)
+    recalcTimerRef.current = setTimeout(() => {
       setCalculando(false)
       toast.success('Escenarios de flota recalculados exitosamente.')
     }, 1400)
+  }
+
+  const descartarPlan = () => {
+    setAprobacion(null)
+    setSeleccion(5)
+    log(usuario, 'Algoritmo', 'Descartó plan de ruteo', 'Se restableció el escenario a la configuración estándar de 5 vehículos')
+    toast.info('Plan descartado. Escenario restablecido a valores por defecto.')
+  }
+
+  const guardarBorrador = () => {
+    log(usuario, 'Algoritmo', 'Guardó borrador de plan', `Escenario con ${plan.n} vehículos y ${plan.rutas.reduce((s, r) => s + r.pedidos.length, 0)} pedidos guardado como borrador`)
+    toast.success(`Borrador del escenario de ${plan.n} vehículos guardado exitosamente.`)
   }
 
   const agregarEscenario = () => {
@@ -257,6 +278,7 @@ function AppInterna({ usuario, puede, puedeAprobar, log }) {
               criterio={criterio} setCriterio={setCriterio}
               turno={turno} setTurno={setTurno}
               jornadaMax={jornadaMax} setJornadaMax={setJornadaMax}
+              onEditarReglas={() => setModulo('config')}
             />
 
             <FleetTrial
@@ -312,8 +334,12 @@ function AppInterna({ usuario, puede, puedeAprobar, log }) {
                   <AprobacionBadge datos={aprobacion} />
                 ) : (
                   <div className="btns">
-                    <button className="btn out">Descartar plan</button>
-                    <button className="btn out">Guardar como borrador</button>
+                    <button type="button" className="btn out" onClick={descartarPlan} title="Restablecer escenario por defecto">
+                      Descartar plan
+                    </button>
+                    <button type="button" className="btn out" onClick={guardarBorrador} title="Guardar cambios temporalmente">
+                      Guardar como borrador
+                    </button>
                     {puedeAprobar() ? (
                       <button className="btn green" onClick={() => setModalAprob(true)}>
                         ✓ Aprobar y enviar a Rutas

@@ -18,11 +18,11 @@ export default function FleetTrial({
   jornadaMax,
   totalPedidos,
 }) {
-  const limite = jornadaMax * 60
-  const peor = Math.max(...escenarios.map((e) => e.jornadaMax))
-  const viables = escenarios.filter((e) => e.sinAsignar.length === 0 && e.jornadaMax <= limite)
+  const limite = (jornadaMax || 8) * 60
+  const peor = escenarios.length ? Math.max(1, ...escenarios.map((e) => e.jornadaMax || 0)) : 1
+  const viables = escenarios.filter((e) => (e.sinAsignar?.length ?? 0) === 0 && e.jornadaMax <= limite)
   const recomendado = viables.length ? viables.reduce((a, b) => (a.n <= b.n ? a : b)).n : null
-  const actual = escenarios.find((e) => e.n === seleccion)
+  const actual = escenarios.find((e) => e.n === seleccion) || escenarios[0]
 
   return (
     <section className="fleet">
@@ -75,7 +75,7 @@ export default function FleetTrial({
           <div style={{ textAlign: 'center', color: '#8792A8' }}>
             <div style={{ fontSize: 20, lineHeight: 1 }}>＋</div>
             <div style={{ fontSize: 10.5, marginTop: 5 }}>
-              Probar con {Math.max(...escenarios.map((e) => e.n)) + 1}
+              Probar con {(escenarios.length ? Math.max(...escenarios.map((e) => e.n)) : 3) + 1}
             </div>
           </div>
         </button>

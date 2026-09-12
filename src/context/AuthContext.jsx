@@ -1,4 +1,4 @@
-import { createContext, useContext, useState } from 'react'
+import { createContext, useContext, useState, useCallback, useMemo } from 'react'
 
 // ── Usuarios del sistema ──────────────────────────────────────
 export const USUARIOS = [
@@ -36,33 +36,67 @@ const AuthContext = createContext(null)
 
 export function AuthProvider({ children }) {
   const [usuario, setUsuario] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('siprd_session')) } catch { return null }
+    try {
+      const stored = localStorage.getItem('siprd_session')
+      return stored ? JSON.parse(stored) : null
+    } catch {
+      return null
+    }
   })
 
-  const login = (user, clave) => {
+  const login = useCallback((user, clave) => {
     // TODO BACKEND: POST /api/auth/login
     // Validar credenciales contra el backend (JWT, Active Directory, etc.)
     const u = USUARIOS.find(u => u.usuario === user && u.clave === clave)
     if (!u) return false
-    setUsuario(u)
-    localStorage.setItem('siprd_session', JSON.stringify(u))
-    return true
-  }
 
-  const logout = () => {
+    // Sanitizar credenciales para no persistir contraseña en localStorage
+    const { clave: _c, ...usuarioSeguro } = u
+    setUsuario(usuarioSeguro)
+    try {
+      localStorage.setItem('siprd_session', JSON.stringify(usuarioSeguro))
+    } catch {
+      // Ignorar fallos de cuota o modo incógnito restringido
+    }
+    return true
+  }, [])
+
+  const logout = useCallback(() => {
     // TODO BACKEND: POST /api/auth/logout (si aplica)
     setUsuario(null)
-    localStorage.removeItem('siprd_session')
-  }
+    try {
+      localStorage.removeItem('siprd_session')
+    } catch {
+      // Ignorar fallos de cuota o modo incógnito restringido
+    }
+  }, [])
 
-  const puede       = (modulo) => usuario ? (PERMISOS[usuario.rol] ?? []).includes(modulo) : false
-  const puedeAprobar = ()      => usuario ? (PUEDE_APROBAR[usuario.rol] ?? false) : false
+  const puede = useCallback(
+    (modulo) => (usuario ? (PERMISOS[usuario.rol] ?? []).includes(modulo) : false),
+    [usuario]
+  )
+
+  const puedeAprobar = useCallback(
+    () => (usuario ? (PUEDE_APROBAR[usuario.rol] ?? false) : false),
+    [usuario]
+  )
+
+  const value = useMemo(
+    () => ({ usuario, login, logout, puede, puedeAprobar }),
+    [usuario, login, logout, puede, puedeAprobar]
+  )
 
   return (
-    <AuthContext.Provider value={{ usuario, login, logout, puede, puedeAprobar }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   )
 }
 
-export const useAuth = () => useContext(AuthContext)
+export const useAuth = () => {
+  const ctx = useContext(AuthContext)
+  if (!ctx) {
+    throw new Error('useAuth debe usarse dentro de un AuthProvider')
+  }
+  return ctx
+}

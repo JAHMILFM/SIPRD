@@ -53,7 +53,15 @@ export default function ParamsBar({ criterio, setCriterio, turno, setTurno, jorn
         <div>
           <span className="lbl">Reglas por cliente</span>
           <div className="fld">
-            12 activas <span style={{ color: 'var(--blue)', fontWeight: 600 }}>Editar</span>
+            <span>12 activas</span>
+            <button
+              type="button"
+              onClick={onEditarReglas}
+              style={{ color: 'var(--blue)', fontWeight: 600, background: 'none', border: 0, cursor: 'pointer', padding: 0 }}
+              title="Ir a configuración de reglas por cliente"
+            >
+              Editar
+            </button>
           </div>
         </div>
 

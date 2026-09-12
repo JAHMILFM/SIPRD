@@ -33,10 +33,20 @@ function VehiculoRow({ v, onSave }) {
   const [edit, setEdit] = useState(false)
   const [form, setForm] = useState({ ...v })
 
-  const f = (k) => (e) => setForm(p => ({ ...p, [k]: k === 'activo' ? e.target.checked : e.target.value }))
+  const f = (k) => (e) => {
+    let val = e.target.value
+    if (k === 'activo') val = e.target.checked
+    else if (k === 'pesoMax' || k === 'volMax' || k === 'año') val = Number(val) || 0
+    setForm(p => ({ ...p, [k]: val }))
+  }
   
   const guardar = () => {
-    onSave(form)
+    onSave({
+      ...form,
+      pesoMax: Number(form.pesoMax) || 1,
+      volMax: Number(form.volMax) || 1,
+      conductor: String(form.conductor || '').trim() || 'Sin conductor asignado',
+    })
     setEdit(false)
   }
 
@@ -128,7 +138,8 @@ function ReglaRow({ r, onSave, onDelete }) {
   })
 
   const guardar = () => {
-    onSave({ ...form, dias: sinRestr ? null : form.dias })
+    const clienteNombre = form.cliente?.trim() || 'Cliente Sin Nombre'
+    onSave({ ...form, cliente: clienteNombre, dias: sinRestr ? null : form.dias })
     setEdit(false)
   }
 
@@ -279,6 +290,7 @@ export default function Configuracion() {
         label: 'Deshacer',
         onClick: () => {
           setReglas(prev => [...prev, regla])
+          log(usuario, 'Configuración', 'Restauró regla de cliente (Deshacer)', regla.cliente)
           toast.success(`Regla de "${regla.cliente}" restaurada.`)
         }
       }

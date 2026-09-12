@@ -38,22 +38,26 @@ export default function OrdersPanel({ plan, reprogramados }) {
     if (q) {
       list = list.filter(
         (p) =>
-          p.cliente.toLowerCase().includes(q) ||
-          p.dir.toLowerCase().includes(q) ||
-          p.id.toLowerCase().includes(q)
+          (p.cliente ?? '').toLowerCase().includes(q) ||
+          (p.dir ?? '').toLowerCase().includes(q) ||
+          String(p.id ?? '').toLowerCase().includes(q)
       )
     }
 
     if (sortCol) {
       list = [...list].sort((a, b) => {
-        let valA = a[sortCol.col]
-        let valB = b[sortCol.col]
-        if (typeof valA === 'string') {
+        const valA = a[sortCol.col]
+        const valB = b[sortCol.col]
+        if (typeof valA === 'string' || typeof valB === 'string') {
+          const strA = String(valA ?? '')
+          const strB = String(valB ?? '')
           return sortCol.dir === 'asc'
-            ? valA.localeCompare(valB)
-            : valB.localeCompare(valA)
+            ? strA.localeCompare(strB)
+            : strB.localeCompare(strA)
         }
-        return sortCol.dir === 'asc' ? valA - valB : valB - valA
+        const numA = Number(valA) || 0
+        const numB = Number(valB) || 0
+        return sortCol.dir === 'asc' ? numA - numB : numB - numA
       })
     }
 
@@ -162,23 +166,63 @@ export default function OrdersPanel({ plan, reprogramados }) {
               <thead>
                 <tr>
                   <th style={{ width: 60 }}>RUTA</th>
-                  <th className="sortable" onClick={() => handleSort('cliente')} title="Ordenar por cliente">
+                  <th
+                    className="sortable"
+                    tabIndex={0}
+                    role="columnheader"
+                    aria-sort={sortCol?.col === 'cliente' ? (sortCol.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                    onClick={() => handleSort('cliente')}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort('cliente'); } }}
+                    title="Ordenar por cliente"
+                  >
                     CLIENTE{sortIcon('cliente')}
                   </th>
                   <th>DIRECCIÓN</th>
                   <th>VEH. SUGERIDO</th>
-                  <th className="num sortable" onClick={() => handleSort('bultos')} title="Ordenar por bultos">
+                  <th
+                    className="num sortable"
+                    tabIndex={0}
+                    role="columnheader"
+                    aria-sort={sortCol?.col === 'bultos' ? (sortCol.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                    onClick={() => handleSort('bultos')}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort('bultos'); } }}
+                    title="Ordenar por bultos"
+                  >
                     BULTOS{sortIcon('bultos')}
                   </th>
-                  <th className="num sortable" onClick={() => handleSort('peso')} title="Ordenar por peso">
+                  <th
+                    className="num sortable"
+                    tabIndex={0}
+                    role="columnheader"
+                    aria-sort={sortCol?.col === 'peso' ? (sortCol.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                    onClick={() => handleSort('peso')}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort('peso'); } }}
+                    title="Ordenar por peso"
+                  >
                     PESO{sortIcon('peso')}
                   </th>
-                  <th className="num sortable" onClick={() => handleSort('vol')} title="Ordenar por volumen">
+                  <th
+                    className="num sortable"
+                    tabIndex={0}
+                    role="columnheader"
+                    aria-sort={sortCol?.col === 'vol' ? (sortCol.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                    onClick={() => handleSort('vol')}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort('vol'); } }}
+                    title="Ordenar por volumen"
+                  >
                     VOL.{sortIcon('vol')}
                   </th>
                   <th>VENTANA</th>
                   <th className="num">SERV.</th>
-                  <th className="sortable" onClick={() => handleSort('prioridad')} title="Ordenar por prioridad">
+                  <th
+                    className="sortable"
+                    tabIndex={0}
+                    role="columnheader"
+                    aria-sort={sortCol?.col === 'prioridad' ? (sortCol.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                    onClick={() => handleSort('prioridad')}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSort('prioridad'); } }}
+                    title="Ordenar por prioridad"
+                  >
                     PRIORIDAD{sortIcon('prioridad')}
                   </th>
                 </tr>

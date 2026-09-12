@@ -1,10 +1,18 @@
 import { FECHA, ALMACEN } from '../data/mock'
+import { useToast } from '../context/ToastContext'
 
 /**
  * TopBar con visibilidad del estado del sistema (Heurística #1)
  * y acceso directo a la Guía y Atajos (Heurística #10).
  */
 export default function TopBar({ titulo, subtitulo, usuario, onOpenHelp }) {
+  const { toast } = useToast()
+
+  const partesNombre = usuario?.nombre ? usuario.nombre.split(' ') : ['Usuario']
+  const nombreCorto = partesNombre.length > 1
+    ? `${partesNombre[0]} ${partesNombre[1][0]}.`
+    : partesNombre[0]
+
   return (
     <header className="top" role="banner">
       <div>
@@ -38,15 +46,21 @@ export default function TopBar({ titulo, subtitulo, usuario, onOpenHelp }) {
         </button>
 
         {/* Notificaciones */}
-        <div className="bell" title="8 alertas operativas pendientes" tabIndex={0} role="button" aria-label="8 notificaciones">
+        <button
+          type="button"
+          className="bell"
+          onClick={() => toast.info('8 alertas operativas: 3 cobros por validar, 1 conflicto de ventana horaria y 4 reprogramaciones.', { duration: 4500 })}
+          title="8 alertas operativas pendientes"
+          aria-label="8 alertas operativas pendientes"
+        >
           <span className="bdg">8</span>
           <span aria-hidden="true">🔔</span>
-        </div>
+        </button>
 
         {/* Perfil */}
-        <div className="ctl" title={`${usuario?.nombre} (${usuario?.titulo})`}>
-          <span className="av" style={{ width: 24, height: 24, fontSize: 10 }}>{usuario?.iniciales}</span>
-          <span style={{ fontWeight: 600 }}>{usuario?.nombre?.split(' ')[0]} {usuario?.nombre?.split(' ')[1]?.[0]}.</span>
+        <div className="ctl" title={`${usuario?.nombre ?? 'Usuario'} (${usuario?.titulo ?? ''})`}>
+          <span className="av" style={{ width: 24, height: 24, fontSize: 10 }}>{usuario?.iniciales ?? 'U'}</span>
+          <span style={{ fontWeight: 600 }}>{nombreCorto}</span>
         </div>
       </div>
     </header>
