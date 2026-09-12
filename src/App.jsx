@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import Sidebar       from './components/Sidebar'
 import TopBar        from './components/TopBar'
 import ParamsBar     from './components/ParamsBar'
@@ -12,10 +12,13 @@ import Cobranzas     from './components/Cobranzas'
 import Configuracion from './components/Configuracion'
 import Registros     from './components/Registros'
 import Login         from './components/Login'
+import Modal         from './components/common/Modal'
+import HelpDrawer    from './components/common/HelpDrawer'
 import { PEDIDOS, VEHICULOS } from './data/mock'
 import { planificar, separarReprogramados, hhmm } from './lib/planner'
 import { useAuth } from './context/AuthContext'
 import { useAudit } from './context/AuditContext'
+import { useToast } from './context/ToastContext'
 
 const TITULOS = {
   inicio:    ['Inicio',                   'Resumen de la operación del día.'],
@@ -26,7 +29,7 @@ const TITULOS = {
   registros: ['Registros de Auditoría',  'Trazabilidad de cambios: reglas, rutas, aprobaciones y cobros · RF-13 · RNF-09'],
 }
 
-// ── Modal de aprobación de ruta (RF-09) ───────────────────────
+// ── Modal de aprobación de ruta accesible (RF-09 / WCAG) ───────
 function ModalAprobacion({ plan, usuario, onConfirmar, onCancelar }) {
   const ahora = new Date()
   const fecha = ahora.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' })
@@ -35,64 +38,58 @@ function ModalAprobacion({ plan, usuario, onConfirmar, onCancelar }) {
   const conflictos   = plan.conflictos?.length ?? 0
 
   return (
-    <div className="modal-overlay" onClick={onCancelar}>
-      <div className="modal-box" onClick={e => e.stopPropagation()}>
-        <div className="modal-hd">
-          <div>
-            <div style={{ fontWeight: 700, fontSize: 14 }}>Confirmar aprobación de plan</div>
-            <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>RF-09 · Esta acción queda registrada en el log de auditoría</div>
-          </div>
-          <button className="modal-close" onClick={onCancelar}>×</button>
+    <Modal
+      isOpen={true}
+      onClose={onCancelar}
+      title="Confirmar aprobación de plan"
+      subtitle="RF-09 · Esta acción queda registrada en el log de auditoría con firma de usuario"
+      maxWidth={520}
+    >
+      {/* Resumen del plan */}
+      <div className="modal-grid">
+        <div><div className="modal-lbl">Vehículos</div><div className="modal-val">{plan.n}</div></div>
+        <div><div className="modal-lbl">Pedidos asignados</div><div className="modal-val">{totalPedidos}</div></div>
+        <div><div className="modal-lbl">Jornada máxima</div><div className="modal-val" style={{ fontSize: 16 }}>{hhmm(plan.jornadaMax)}</div></div>
+        <div><div className="modal-lbl">Distancia total</div><div className="modal-val" style={{ fontSize: 16 }}>{plan.kmTotal.toFixed(1)} km</div></div>
+      </div>
+
+      {/* Quién aprueba + cuándo */}
+      <div className="modal-sep" />
+      <div className="modal-meta">
+        <div>
+          <div className="modal-lbl">Aprobado por</div>
+          <div style={{ fontWeight: 700, fontSize: 13 }}>{usuario.nombre}</div>
+          <div style={{ fontSize: 10.5, color: '#64748b', marginTop: 2 }}>{usuario.titulo}</div>
         </div>
-
-        <div className="modal-body">
-          {/* Resumen del plan */}
-          <div className="modal-grid">
-            <div><div className="modal-lbl">Vehículos</div><div className="modal-val">{plan.n}</div></div>
-            <div><div className="modal-lbl">Pedidos asignados</div><div className="modal-val">{totalPedidos}</div></div>
-            <div><div className="modal-lbl">Jornada máxima</div><div className="modal-val" style={{ fontSize: 16 }}>{hhmm(plan.jornadaMax)}</div></div>
-            <div><div className="modal-lbl">Distancia total</div><div className="modal-val" style={{ fontSize: 16 }}>{plan.kmTotal.toFixed(1)} km</div></div>
-          </div>
-
-          {/* Quién aprueba + cuándo */}
-          <div className="modal-sep" />
-          <div className="modal-meta">
-            <div>
-              <div className="modal-lbl">Aprobado por</div>
-              <div style={{ fontWeight: 700, fontSize: 13 }}>{usuario.nombre}</div>
-              <div style={{ fontSize: 10.5, color: '#64748b', marginTop: 2 }}>{usuario.titulo}</div>
-            </div>
-            <div>
-              <div className="modal-lbl">Fecha y hora</div>
-              <div style={{ fontWeight: 700, fontSize: 13 }}>{fecha}</div>
-              <div style={{ fontSize: 10.5, color: '#64748b', marginTop: 2 }}>{hora}</div>
-            </div>
-          </div>
-
-          {/* Advertencias */}
-          {conflictos > 0 && (
-            <div className="warnbox">
-              <span>⚑</span>
-              <div><b>{conflictos} parada{conflictos > 1 ? 's' : ''} con ventana horaria en conflicto.</b> Verifica con el asistente antes de aprobar.</div>
-            </div>
-          )}
-          {plan.sinAsignar.length > 0 && (
-            <div className="warnbox">
-              <span>⚑</span>
-              <div><b>{plan.sinAsignar.length} pedido{plan.sinAsignar.length > 1 ? 's' : ''} sin asignar.</b> No entrarán en la ruta aprobada.</div>
-            </div>
-          )}
-          <div style={{ fontSize: 11.5, color: '#64748b', background: '#f8fafc', borderRadius: 8, padding: '9px 12px' }}>
-            Esta acción no puede revertirse desde esta pantalla. El plan aprobado se enviará a Rutas.
-          </div>
-        </div>
-
-        <div className="modal-ft">
-          <button className="btn out" onClick={onCancelar}>Cancelar</button>
-          <button className="btn green" onClick={() => onConfirmar(fecha, hora)}>✓ Confirmar aprobación</button>
+        <div>
+          <div className="modal-lbl">Fecha y hora</div>
+          <div style={{ fontWeight: 700, fontSize: 13 }}>{fecha}</div>
+          <div style={{ fontSize: 10.5, color: '#64748b', marginTop: 2 }}>{hora}</div>
         </div>
       </div>
-    </div>
+
+      {/* Advertencias */}
+      {conflictos > 0 && (
+        <div className="warnbox">
+          <span>⚑</span>
+          <div><b>{conflictos} parada{conflictos > 1 ? 's' : ''} con ventana horaria en conflicto.</b> Verifica con el asistente antes de aprobar.</div>
+        </div>
+      )}
+      {plan.sinAsignar.length > 0 && (
+        <div className="warnbox">
+          <span>⚑</span>
+          <div><b>{plan.sinAsignar.length} pedido{plan.sinAsignar.length > 1 ? 's' : ''} sin asignar.</b> No entrarán en la ruta aprobada.</div>
+        </div>
+      )}
+      <div style={{ fontSize: 11.5, color: '#64748b', background: '#f8fafc', borderRadius: 8, padding: '9px 12px' }}>
+        Esta acción no puede revertirse desde esta pantalla. El plan aprobado se enviará a Rutas.
+      </div>
+
+      <div className="modal-ft" style={{ margin: '14px -22px -20px', padding: '14px 22px' }}>
+        <button className="btn out" onClick={onCancelar}>Cancelar</button>
+        <button className="btn green" onClick={() => onConfirmar(fecha, hora)}>✓ Confirmar aprobación</button>
+      </div>
+    </Modal>
   )
 }
 
@@ -137,6 +134,8 @@ export default function App() {
 }
 
 function AppInterna({ usuario, puede, puedeAprobar, log }) {
+  const { toast } = useToast()
+
   // Módulo inicial según rol
   const moduloInicial = puede('inicio') ? 'inicio' : puede('config') ? 'config' : 'registros'
 
@@ -147,9 +146,44 @@ function AppInterna({ usuario, puede, puedeAprobar, log }) {
   const [tamanos, setTamanos]       = useState([3, 4, 5, 6])
   const [seleccion, setSeleccion]   = useState(5)
   const [calculando, setCalculando] = useState(false)
+  const [helpOpen, setHelpOpen]     = useState(false)
   // RF-09: aprobación
   const [modalAprob, setModalAprob] = useState(false)
   const [aprobacion, setAprobacion] = useState(null)
+
+  // Atajos de teclado globales (Heurística #7: Flexibilidad y eficiencia de uso)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Ignorar si el foco está en un campo de texto
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target?.tagName)) return
+
+      if (e.key === '?' || (e.shiftKey && e.key === '/')) {
+        e.preventDefault()
+        setHelpOpen(prev => !prev)
+        return
+      }
+
+      if (e.altKey) {
+        const modulosMap = {
+          '1': 'inicio',
+          '2': 'algoritmo',
+          '3': 'rutas',
+          '4': 'cobranzas',
+          '5': 'config',
+          '6': 'registros',
+        }
+        const target = modulosMap[e.key]
+        if (target && puede(target)) {
+          e.preventDefault()
+          setModulo(target)
+          toast.info(`Navegaste a: ${TITULOS[target]?.[0] || target}`, { duration: 1800 })
+        }
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [puede, toast])
 
   const { planificables, reprogramados } = useMemo(() => separarReprogramados(PEDIDOS), [])
 
@@ -162,29 +196,42 @@ function AppInterna({ usuario, puede, puedeAprobar, log }) {
 
   const recalcular = () => {
     setCalculando(true)
-    setTimeout(() => setCalculando(false), 1400)
+    toast.info('Optimizando reparto con heurística y ventanas horarias…', { duration: 1400 })
+    setTimeout(() => {
+      setCalculando(false)
+      toast.success('Escenarios de flota recalculados exitosamente.')
+    }, 1400)
   }
 
   const agregarEscenario = () => {
     const siguiente = Math.max(...tamanos) + 1
-    if (siguiente > VEHICULOS.length) return
+    if (siguiente > VEHICULOS.length) {
+      toast.warning(`No hay más vehículos configurados (máximo ${VEHICULOS.length}).`)
+      return
+    }
     setTamanos([...tamanos, siguiente])
+    toast.info(`Añadido escenario con ${siguiente} vehículos.`)
   }
 
   // RF-09: confirmar aprobación
   const confirmarAprobacion = (fecha, hora) => {
+    // TODO BACKEND: POST /api/planes/aprobar
     const totalPedidos = plan.rutas.reduce((s, r) => s + r.pedidos.length, 0)
     const datos = { usuario: usuario.nombre, titulo: usuario.titulo, fecha, hora, n: plan.n, pedidos: totalPedidos }
     setAprobacion(datos)
     setModalAprob(false)
     log(usuario, 'Algoritmo', 'Aprobó plan de ruteo',
       `${plan.n} vehículos · ${totalPedidos} pedidos · jornada máx. ${hhmm(plan.jornadaMax)} · ${plan.kmTotal.toFixed(1)} km`)
+    toast.success(`Plan aprobado: ${plan.n} vehículos y ${totalPedidos} pedidos listos para despacho.`)
   }
 
   const [titulo, subtitulo] = TITULOS[modulo] ?? ['', '']
 
   return (
     <div className="app">
+      {/* Centro de Ayuda y Heurísticas (Heurística #10) */}
+      <HelpDrawer isOpen={helpOpen} onClose={() => setHelpOpen(false)} />
+
       {/* Modal de aprobación */}
       {modalAprob && (
         <ModalAprobacion
@@ -195,10 +242,10 @@ function AppInterna({ usuario, puede, puedeAprobar, log }) {
         />
       )}
 
-      <Sidebar activo={modulo} onCambiar={setModulo} />
+      <Sidebar activo={modulo} onCambiar={setModulo} onOpenHelp={() => setHelpOpen(true)} />
 
       <main className="main">
-        <TopBar titulo={titulo} subtitulo={subtitulo} />
+        <TopBar titulo={titulo} subtitulo={subtitulo} usuario={usuario} onOpenHelp={() => setHelpOpen(true)} />
 
         {/* ── Inicio ─────────────────────── */}
         {modulo === 'inicio' && (puede('inicio') ? <Inicio /> : <AccesoDenegado />)}

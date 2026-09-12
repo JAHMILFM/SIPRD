@@ -1,13 +1,12 @@
-import { useAuth } from '../context/AuthContext'
-import { PERMISOS } from '../context/AuthContext'
+import { useAuth, PERMISOS } from '../context/AuthContext'
 
 const TODOS_MODULOS = [
-  { id: 'inicio',    label: 'Inicio' },
-  { id: 'algoritmo', label: 'Algoritmo' },
-  { id: 'rutas',     label: 'Rutas' },
-  { id: 'cobranzas', label: 'Cobranzas' },
-  { id: 'config',    label: 'Configuración' },
-  { id: 'registros', label: 'Registros' },
+  { id: 'inicio',    label: 'Inicio',        shortcut: '1' },
+  { id: 'algoritmo', label: 'Algoritmo',     shortcut: '2' },
+  { id: 'rutas',     label: 'Rutas',         shortcut: '3' },
+  { id: 'cobranzas', label: 'Cobranzas',     shortcut: '4' },
+  { id: 'config',    label: 'Configuración', shortcut: '5' },
+  { id: 'registros', label: 'Registros',     shortcut: '6' },
 ]
 
 const ICONOS = {
@@ -21,7 +20,7 @@ const ICONOS = {
 
 const ROL_COLOR = { jefe: '#E1252B', asistente: '#2563EB', ti: '#9333EA' }
 
-export default function Sidebar({ activo, onCambiar }) {
+export default function Sidebar({ activo, onCambiar, onOpenHelp }) {
   const { usuario, logout } = useAuth()
 
   // Solo muestra los módulos que el rol puede ver (RNF-02)
@@ -30,7 +29,7 @@ export default function Sidebar({ activo, onCambiar }) {
   )
 
   return (
-    <aside className="side">
+    <aside className="side" aria-label="Navegación principal">
       <div className="brand">
         <svg width="28" height="28" viewBox="0 0 32 32" aria-hidden="true">
           <path d="M16 3 30 29H2L16 3z" fill="#E1252B" />
@@ -49,6 +48,7 @@ export default function Sidebar({ activo, onCambiar }) {
             className={activo === m.id ? 'on' : ''}
             onClick={() => onCambiar(m.id)}
             aria-current={activo === m.id ? 'page' : undefined}
+            title={`Ir a ${m.label} (Alt + ${m.shortcut})`}
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
               {m.id === 'cobranzas'  && <circle cx="12" cy="12" r="9" />}
@@ -57,6 +57,7 @@ export default function Sidebar({ activo, onCambiar }) {
               <path d={ICONOS[m.id]} />
             </svg>
             <span>{m.label}</span>
+            <span className="nav-shortcut-badge" aria-hidden="true">{m.shortcut}</span>
           </button>
         ))}
       </nav>
@@ -69,6 +70,32 @@ export default function Sidebar({ activo, onCambiar }) {
           </div>
           <small>Actualizado 08:45 a.m.</small>
         </div>
+
+        {/* Botón de Ayuda en Sidebar (Heurística #10) */}
+        <button
+          type="button"
+          onClick={onOpenHelp}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            width: '100%',
+            padding: '7px 10px',
+            borderRadius: 7,
+            background: 'rgba(255, 255, 255, 0.05)',
+            border: '1px solid rgba(255, 255, 255, 0.08)',
+            color: '#cbd5e1',
+            fontSize: 11,
+            fontWeight: 600,
+            cursor: 'pointer',
+            textAlign: 'left'
+          }}
+          title="Abrir Guía y Atajos de Teclado (Presiona ?)"
+        >
+          <span style={{ fontSize: 13 }}>❓</span>
+          <span>Guía y Atajos</span>
+          <kbd className="mini-kbd" style={{ marginLeft: 'auto', background: 'rgba(0,0,0,0.3)', color: '#fff', borderColor: 'rgba(255,255,255,0.2)' }}>?</kbd>
+        </button>
 
         {/* Usuario autenticado (RNF-02) */}
         {usuario && (
@@ -92,7 +119,6 @@ export default function Sidebar({ activo, onCambiar }) {
           </svg>
           Cerrar sesión
         </button>
-        <div className="collapse">« Colapsar</div>
       </div>
     </aside>
   )
