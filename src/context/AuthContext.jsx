@@ -40,6 +40,8 @@ export function AuthProvider({ children }) {
   })
 
   const login = (user, clave) => {
+    // TODO BACKEND: POST /api/auth/login
+    // Validar credenciales contra el backend (JWT, Active Directory, etc.)
     const u = USUARIOS.find(u => u.usuario === user && u.clave === clave)
     if (!u) return false
     setUsuario(u)
@@ -48,6 +50,7 @@ export function AuthProvider({ children }) {
   }
 
   const logout = () => {
+    // TODO BACKEND: POST /api/auth/logout (si aplica)
     setUsuario(null)
     localStorage.removeItem('siprd_session')
   }

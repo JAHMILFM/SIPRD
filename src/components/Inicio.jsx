@@ -1,28 +1,31 @@
+import { useState } from 'react'
 import { RUTAS_ACTIVAS } from '../data/mockRutas'
 
 /**
  * Dashboard de inicio.
  *
- * KPIs del día: pedidos, rutas, entregas y estado de flota.
- * Reemplaza el stub actual de "Inicio".
+ * KPIs del día: pedidos, rutas, entregas y estado de flota en tiempo real.
+ * Diseñado bajo Heurística #1 (estado del sistema visible) y Ley de Miller (chunking).
  */
 export default function Inicio() {
+  const [filtroActividad, setFiltroActividad] = useState('todas')
+
   // ── métricas calculadas desde las rutas activas ──────────────
-  const totalRutas  = RUTAS_ACTIVAS.length
+  const totalRutas   = RUTAS_ACTIVAS.length
   const totalParadas = RUTAS_ACTIVAS.reduce((s, r) => s + r.paradas.length, 0)
-  const entregados  = RUTAS_ACTIVAS.reduce((s, r) => s + r.paradas.filter(p => p.estado === 'entregado').length, 0)
-  const enCamino    = RUTAS_ACTIVAS.reduce((s, r) => s + r.paradas.filter(p => p.estado === 'en_camino').length, 0)
-  const pendientes  = RUTAS_ACTIVAS.reduce((s, r) => s + r.paradas.filter(p => p.estado === 'pendiente').length, 0)
-  const montoTotal  = RUTAS_ACTIVAS.reduce((s, r) => s + r.paradas.reduce((ss, p) => ss + p.monto, 0), 0)
+  const entregados   = RUTAS_ACTIVAS.reduce((s, r) => s + r.paradas.filter(p => p.estado === 'entregado').length, 0)
+  const enCamino     = RUTAS_ACTIVAS.reduce((s, r) => s + r.paradas.filter(p => p.estado === 'en_camino').length, 0)
+  const pendientes   = RUTAS_ACTIVAS.reduce((s, r) => s + r.paradas.filter(p => p.estado === 'pendiente').length, 0)
+  const montoTotal   = RUTAS_ACTIVAS.reduce((s, r) => s + r.paradas.reduce((ss, p) => ss + p.monto, 0), 0)
   const pct = Math.round((entregados / totalParadas) * 100)
 
   const KPI = [
-    { label: 'Pedidos del día', valor: totalParadas, color: '#2563EB', bg: '#dbeafe', icon: '📦' },
-    { label: 'Entregados', valor: entregados, color: '#16A34A', bg: '#dcfce7', icon: '✓' },
-    { label: 'En camino', valor: enCamino, color: '#F59E0B', bg: '#fef3c7', icon: '🚚' },
-    { label: 'Pendientes', valor: pendientes, color: '#64748b', bg: '#f1f5f9', icon: '⏳' },
-    { label: 'Rutas activas', valor: totalRutas, color: '#9333EA', bg: '#f3e8ff', icon: '🗺' },
-    { label: 'Monto en ruta', valor: `S/ ${montoTotal.toLocaleString('es-PE')}`, color: '#0891B2', bg: '#e0f2fe', icon: '💰' },
+    { label: 'Pedidos del día', valor: totalParadas, color: '#2563EB', bg: '#dbeafe', icon: '📦', desc: 'Total programado para reparto hoy' },
+    { label: 'Entregados', valor: entregados, color: '#16A34A', bg: '#dcfce7', icon: '✓', desc: 'Confirmados por cliente y conductor' },
+    { label: 'En camino', valor: enCamino, color: '#d97706', bg: '#fef3c7', icon: '🚚', desc: 'En tránsito hacia el cliente' },
+    { label: 'Pendientes', valor: pendientes, color: '#64748b', bg: '#f1f5f9', icon: '⏳', desc: 'Próximos según secuencia' },
+    { label: 'Rutas activas', valor: totalRutas, color: '#9333EA', bg: '#f3e8ff', icon: '🗺', desc: 'Vehículos despachados de Lurín' },
+    { label: 'Monto en ruta', valor: `S/ ${montoTotal.toLocaleString('es-PE')}`, color: '#0891B2', bg: '#e0f2fe', icon: '💰', desc: 'Total a recaudar en la jornada' },
   ]
 
   // ── actividad reciente ────────────────────────────────────────
@@ -30,68 +33,94 @@ export default function Inicio() {
     r.paradas
       .filter(p => p.estado === 'entregado')
       .map(p => ({ ...p, conductor: r.vehiculo.conductor, ruta: r.id, color: r.color }))
-  ).sort((a, b) => b.horaReal.localeCompare(a.horaReal)).slice(0, 8)
+  ).sort((a, b) => (b.horaReal ?? '').localeCompare(a.horaReal ?? ''))
+
+  const actividadFiltrada = filtroActividad === 'todas'
+    ? actividad.slice(0, 8)
+    : actividad.filter(a => a.ruta === filtroActividad).slice(0, 8)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
 
-      {/* KPI strip */}
+      {/* KPI strip (Ley de Miller: 6 tarjetas de alta legibilidad) */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px,1fr))', gap: 12 }}>
         {KPI.map(k => (
-          <div key={k.label} className="card" style={{ padding: '14px 16px' }}>
+          <div
+            key={k.label}
+            className="card"
+            style={{ padding: '14px 18px', transition: 'transform 0.15s ease' }}
+            title={k.desc}
+          >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div>
-                <div style={{ fontSize: 10.5, color: '#64748b', fontWeight: 500, marginBottom: 6 }}>{k.label}</div>
-                <div style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-1px', color: k.color }}>{k.valor}</div>
+                <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, marginBottom: 4 }}>{k.label}</div>
+                <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.5px', color: k.color }}>{k.valor}</div>
+                <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>{k.desc}</div>
               </div>
-              <div style={{ width: 34, height: 34, borderRadius: 9, background: k.bg, display: 'grid', placeItems: 'center', fontSize: 16 }}>
-                {k.icon}
+              <div style={{ width: 36, height: 36, borderRadius: 9, background: k.bg, display: 'grid', placeItems: 'center', fontSize: 17, flex: '0 0 auto' }}>
+                <span aria-hidden="true">{k.icon}</span>
               </div>
             </div>
           </div>
         ))}
       </div>
 
-      {/* Progreso global del día */}
-      <div className="card" style={{ padding: '14px 18px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+      {/* Progreso global del día (Heurística #1) */}
+      <div className="card" style={{ padding: '16px 20px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
           <div>
-            <div style={{ fontWeight: 600, fontSize: 13 }}>Progreso global de entregas</div>
-            <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>Actualizado en tiempo real · operación iniciada a las 08:00</div>
+            <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--ink)' }}>Progreso global de entregas de la jornada</div>
+            <div style={{ fontSize: 11.5, color: '#64748b', marginTop: 2 }}>Monitoreo en tiempo real · Operación iniciada a las 08:00 a.m. desde Almacén Lurín</div>
           </div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: '#2563EB' }}>{pct}%</div>
+          <div style={{ fontSize: 24, fontWeight: 800, color: '#2563EB' }}>{pct}% completado</div>
         </div>
-        <div style={{ height: 10, borderRadius: 6, background: '#e2e8f0', overflow: 'hidden' }}>
-          <div style={{ height: '100%', width: `${pct}%`, background: 'linear-gradient(90deg,#2563EB,#16A34A)', borderRadius: 6, transition: 'width .4s' }} />
+
+        <div style={{ height: 10, borderRadius: 5, background: '#e2e8f0', overflow: 'hidden' }}>
+          <div
+            style={{
+              height: '100%',
+              width: `${pct}%`,
+              background: 'linear-gradient(90deg, #2563EB 0%, #16A34A 100%)',
+              borderRadius: 5,
+              transition: 'width 0.4s ease'
+            }}
+          />
         </div>
-        <div style={{ display: 'flex', gap: 18, marginTop: 10 }}>
-          {[['Entregados', entregados, '#16A34A', '#dcfce7'], ['En camino', enCamino, '#F59E0B', '#fef3c7'], ['Pendientes', pendientes, '#64748b', '#f1f5f9']].map(([lbl, n, c, bg]) => (
-            <div key={lbl} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5 }}>
-              <span style={{ width: 8, height: 8, borderRadius: '50%', background: c, display: 'inline-block' }} />
-              <span style={{ color: '#64748b' }}>{lbl}</span>
-              <strong style={{ color: c }}>{n}</strong>
+
+        <div style={{ display: 'flex', gap: 20, marginTop: 12, flexWrap: 'wrap' }}>
+          {[
+            ['Entregados', entregados, '#16A34A', '#dcfce7'],
+            ['En camino', enCamino, '#d97706', '#fef3c7'],
+            ['Pendientes', pendientes, '#64748b', '#f1f5f9']
+          ].map(([lbl, n, c]) => (
+            <div key={lbl} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+              <span style={{ width: 9, height: 9, borderRadius: '50%', background: c, display: 'inline-block' }} />
+              <span style={{ color: '#64748b', fontWeight: 500 }}>{lbl}:</span>
+              <strong style={{ color: c, fontWeight: 700 }}>{n}</strong>
             </div>
           ))}
         </div>
       </div>
 
       {/* Estado de flota + Actividad reciente */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1fr', gap: 14, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1.15fr 1fr', gap: 14, alignItems: 'start' }}>
 
         {/* Flota */}
         <div className="card">
           <div className="ch">
             <div>
-              <h3>Estado de la flota</h3>
-              <p>{totalRutas} vehículos en ruta hoy</p>
+              <h3>Estado operativo de la flota</h3>
+              <p>{totalRutas} unidades en ruta hoy · Alfa Distribuidores</p>
             </div>
           </div>
           <div className="tw">
             <table>
               <thead>
                 <tr>
-                  <th>VEHÍCULO</th><th>CONDUCTOR</th>
-                  <th className="num">ENTREGADOS</th><th className="num">PENDIENTES</th>
+                  <th>VEHÍCULO</th>
+                  <th>CONDUCTOR</th>
+                  <th className="num">ENTREGADOS</th>
+                  <th className="num">PENDIENTES</th>
                   <th>PROGRESO</th>
                 </tr>
               </thead>
@@ -104,18 +133,18 @@ export default function Inicio() {
                     <tr key={r.id}>
                       <td>
                         <span className="rt" style={{ background: r.color }}>{r.id}</span>
-                        <span style={{ marginLeft: 6, fontWeight: 600 }}>{r.vehiculo.placa}</span>
-                        <span style={{ display: 'block', color: '#94a3b8', fontSize: 10 }}>{r.vehiculo.marca}</span>
+                        <span style={{ marginLeft: 6, fontWeight: 700, color: 'var(--ink)' }}>{r.vehiculo.placa}</span>
+                        <span style={{ display: 'block', color: '#64748b', fontSize: 10 }}>{r.vehiculo.marca}</span>
                       </td>
-                      <td>{r.vehiculo.conductor}</td>
-                      <td className="num" style={{ color: '#16A34A', fontWeight: 600 }}>{ent}</td>
-                      <td className="num" style={{ color: '#64748b' }}>{tot - ent}</td>
-                      <td style={{ minWidth: 110 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                          <div style={{ flex: 1, height: 5, borderRadius: 3, background: '#e2e8f0', overflow: 'hidden' }}>
+                      <td style={{ fontWeight: 500 }}>{r.vehiculo.conductor}</td>
+                      <td className="num" style={{ color: '#16A34A', fontWeight: 700 }}>{ent}</td>
+                      <td className="num" style={{ color: '#64748b', fontWeight: 600 }}>{tot - ent}</td>
+                      <td style={{ minWidth: 120 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <div style={{ flex: 1, height: 6, borderRadius: 3, background: '#e2e8f0', overflow: 'hidden' }}>
                             <div style={{ height: '100%', width: `${p}%`, background: p >= 80 ? '#16A34A' : '#2563EB', borderRadius: 3 }} />
                           </div>
-                          <span style={{ fontSize: 10.5, fontWeight: 600, color: '#64748b', minWidth: 28 }}>{p}%</span>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: '#64748b', minWidth: 32 }}>{p}%</span>
                         </div>
                       </td>
                     </tr>
@@ -130,26 +159,46 @@ export default function Inicio() {
         <div className="card">
           <div className="ch">
             <div>
-              <h3>Actividad reciente</h3>
-              <p>Últimas entregas confirmadas</p>
+              <h3>Actividad reciente de entregas</h3>
+              <p>Últimos despachos confirmados en vivo</p>
             </div>
+            <select
+              value={filtroActividad}
+              onChange={e => setFiltroActividad(e.target.value)}
+              style={{ border: '1px solid #cbd5e1', borderRadius: 6, padding: '4px 8px', fontSize: 11.5, background: '#fff', color: '#0f172a' }}
+              aria-label="Filtrar actividad por ruta"
+            >
+              <option value="todas">Todas las rutas</option>
+              {RUTAS_ACTIVAS.map(r => (
+                <option key={r.id} value={r.id}>{r.id} ({r.vehiculo.conductor})</option>
+              ))}
+            </select>
           </div>
           <div style={{ padding: '4px 0' }}>
-            {actividad.map((a, i) => (
-              <div key={i} style={{ display: 'flex', gap: 10, padding: '9px 15px', borderBottom: '1px solid #f1f4f8', alignItems: 'flex-start' }}>
-                <div style={{ width: 30, height: 30, borderRadius: 8, background: a.color + '18', display: 'grid', placeItems: 'center', fontSize: 15, flex: '0 0 auto', marginTop: 1 }}>
+            {actividadFiltrada.map((a, i) => (
+              <div key={i} style={{ display: 'flex', gap: 10, padding: '10px 16px', borderBottom: '1px solid #f1f4f8', alignItems: 'center' }}>
+                <div style={{ width: 32, height: 32, borderRadius: 8, background: a.color + '18', display: 'grid', placeItems: 'center', fontSize: 15, flex: '0 0 auto', color: a.color, fontWeight: 700 }}>
                   ✓
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, fontSize: 11.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{a.cliente}</div>
-                  <div style={{ fontSize: 10.5, color: '#64748b', marginTop: 1 }}>{a.conductor} · <span className="rt" style={{ background: a.color }}>{a.ruta}</span></div>
+                  <div style={{ fontWeight: 600, fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--ink)' }}>
+                    {a.cliente}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#64748b', marginTop: 1 }}>
+                    {a.conductor} · <span className="rt" style={{ background: a.color, fontSize: 9 }}>{a.ruta}</span>
+                  </div>
                 </div>
                 <div style={{ textAlign: 'right', flex: '0 0 auto' }}>
-                  <div style={{ fontWeight: 600, color: '#16A34A', fontSize: 11 }}>S/ {a.monto.toLocaleString('es-PE')}</div>
-                  <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 1 }}>{a.horaReal}</div>
+                  <div style={{ fontWeight: 700, color: '#16A34A', fontSize: 12 }}>S/ {a.monto.toLocaleString('es-PE')}</div>
+                  <div style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 1 }}>{a.horaReal}</div>
                 </div>
               </div>
             ))}
+            {actividadFiltrada.length === 0 && (
+              <div className="empty" style={{ padding: '30px 16px' }}>
+                <b>Sin entregas en esta ruta aún</b>
+              </div>
+            )}
           </div>
         </div>
 

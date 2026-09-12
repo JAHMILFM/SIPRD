@@ -59,6 +59,10 @@ function costoPedido(p) {
  * menor jornada acumulada que aún tenga capacidad de peso y volumen.
  */
 export function planificar(pedidos, n) {
+  // TODO BACKEND: POST /api/planes/optimizar
+  // Esta función entera se reemplazará por una llamada a la API en producción.
+  // La UI seguirá consumiendo el mismo formato de respuesta.
+
   const flota = VEHICULOS.slice(0, n)
   const rutas = flota.map((v, i) => ({
     id: `R${i + 1}`,

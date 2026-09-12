@@ -36,6 +36,8 @@ export function AuditProvider({ children }) {
       hora,
     }
     setRegistros(prev => [entry, ...prev])
+    // TODO BACKEND: POST /api/audit
+    // Enviar el entry al backend para persistencia inmutable
   }
 
   return (
