@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { COBROS_INICIAL } from '../data/mockRutas'
 import { useAuth } from '../context/AuthContext'
 import { useAudit } from '../context/AuditContext'

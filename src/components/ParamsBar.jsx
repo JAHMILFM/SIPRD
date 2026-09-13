@@ -1,6 +1,6 @@
 import { FECHA } from '../data/mock'
 
-export default function ParamsBar({ criterio, setCriterio, turno, setTurno, jornadaMax, setJornadaMax }) {
+export default function ParamsBar({ criterio, setCriterio, turno, setTurno, jornadaMax, setJornadaMax, onEditarReglas }) {
   return (
     <div className="card">
       <div className="params">

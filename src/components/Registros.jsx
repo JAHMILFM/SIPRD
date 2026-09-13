@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useAudit } from '../context/AuditContext'
 import { useToast } from '../context/ToastContext'
 
@@ -27,6 +27,23 @@ export default function Registros() {
   const { toast }     = useToast()
   const [filtroMod, setFiltroMod] = useState('todos')
   const [busca, setBusca]         = useState('')
+
+  const modulos = useMemo(() => [...new Set(registros.map(r => r.modulo))], [registros])
+
+  const registrosFiltrados = useMemo(() => {
+    return registros.filter(r => {
+      if (filtroMod !== 'todos' && r.modulo !== filtroMod) return false
+      if (busca) {
+        const q = busca.toLowerCase()
+        return (
+          r.usuario.toLowerCase().includes(q) ||
+          r.accion.toLowerCase().includes(q) ||
+          (r.detalle && r.detalle.toLowerCase().includes(q))
+        )
+      }
+      return true
+    })
+  }, [registros, filtroMod, busca])
 
   const exportarAuditCSV = () => {
     try {
@@ -77,21 +94,6 @@ export default function Registros() {
       </div>
     )
   }
-
-  const modulos = [...new Set(registros.map(r => r.modulo))]
-
-  const registrosFiltrados = registros.filter(r => {
-    if (filtroMod !== 'todos' && r.modulo !== filtroMod) return false
-    if (busca) {
-      const q = busca.toLowerCase()
-      return (
-        r.usuario.toLowerCase().includes(q) ||
-        r.accion.toLowerCase().includes(q) ||
-        (r.detalle && r.detalle.toLowerCase().includes(q))
-      )
-    }
-    return true
-  })
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
