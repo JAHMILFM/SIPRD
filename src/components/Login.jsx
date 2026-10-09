@@ -2,35 +2,6 @@ import { useState, useRef, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import Modal from './common/Modal'
 
-const DEMO = [
-  {
-    usuario: 'dhuerta',
-    clave: 'jefe123',
-    nombre: 'Dennys Huerta',
-    rol: 'Jefe de Distribución',
-    desc: 'Acceso total + aprobación de rutas',
-    ini: 'DH',
-    color: '#E1252B'
-  },
-  {
-    usuario: 'asistente',
-    clave: 'dist123',
-    nombre: 'Lesli Pomalaya',
-    rol: 'Asistente de Distribución',
-    desc: 'Tanteo, ruteo en vivo y cobranzas',
-    ini: 'LP',
-    color: '#2563EB'
-  },
-  {
-    usuario: 'admin.ti',
-    clave: 'ti2026',
-    nombre: 'Área de TI',
-    rol: 'Administrador TI',
-    desc: 'Configuración y registros de auditoría',
-    ini: 'TI',
-    color: '#9333EA'
-  },
-]
 
 /**
  * Pantalla de inicio de sesión profesional — RNF-02 / WCAG 2.1 AA.
@@ -86,14 +57,6 @@ export default function Login() {
         setCargando(false)
       }
     }, 300)
-  }
-
-  const autoFill = (u) => {
-    setUsuario(u.usuario)
-    setClave(u.clave)
-    setError('')
-    setAceptado(true)
-    setTocado({ usuario: true, clave: true })
   }
 
   const userInvalido = tocado.usuario && !usuario.trim()
@@ -261,32 +224,6 @@ export default function Login() {
             </button>
           </form>
 
-          {/* Selector Ergonómico de Cuentas Demo (Ley de Fitts + Miller) */}
-          <div className="login-demo-new">
-            <div className="login-demo-title">
-              Cuentas de demostración · Clic para rellenar
-            </div>
-            <div className="login-demo-grid">
-              {DEMO.map(u => (
-                <button
-                  key={u.usuario}
-                  type="button"
-                  className="login-demo-card"
-                  onClick={() => autoFill(u)}
-                  title={`Cargar credenciales de ${u.nombre}`}
-                >
-                  <div className="login-demo-av" style={{ background: u.color }}>
-                    {u.ini}
-                  </div>
-                  <div className="login-demo-info">
-                    <b>{u.nombre}</b>
-                    <span>{u.rol} · {u.usuario}</span>
-                  </div>
-                  <span className="login-demo-fill-btn">Usar cuenta</span>
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
       </div>
     </div>

@@ -636,9 +636,54 @@ class Incidencia(Base):
 
     parada_rel = relationship("ParadaRuta", back_populates="incidencias")
 
-    @property
+    @hybrid_property
     def id(self) -> str:
         return str(self.id_incidencia)
+
+    @id.expression
+    def id(cls):
+        return cls.id_incidencia
+
+    @hybrid_property
+    def parada_id(self) -> str:
+        return str(self.id_parada)
+
+    @parada_id.setter
+    def parada_id(self, val):
+        self.id_parada = int(val) if val is not None else None
+
+    @parada_id.expression
+    def parada_id(cls):
+        return cls.id_parada
+
+    @hybrid_property
+    def creado_en(self) -> datetime:
+        return self.fecha_hora
+
+    @creado_en.setter
+    def creado_en(self, val):
+        self.fecha_hora = val
+
+    @creado_en.expression
+    def creado_en(cls):
+        return cls.fecha_hora
+
+    @property
+    def ruta_id(self) -> Optional[str]:
+        return str(self.parada_rel.id_ruta) if self.parada_rel else None
+
+    @property
+    def registrada_por(self) -> Optional[str]:
+        return None
+
+    @property
+    def atendida_por(self) -> Optional[str]:
+        return None
+
+    @property
+    def resolucion(self) -> Optional[str]:
+        return None
+
 
 
 # ── 7. Auditoría Inmutable ─────────────────────────────────────────

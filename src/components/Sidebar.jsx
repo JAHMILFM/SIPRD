@@ -18,7 +18,14 @@ const ICONOS = {
   registros: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2',
 }
 
-const ROL_COLOR = { jefe: '#E1252B', asistente: '#2563EB', ti: '#9333EA' }
+const ROL_COLOR = {
+  jefe: '#E1252B',
+  asistente: '#2563EB',
+  ti: '#9333EA',
+  administrador: '#9333EA',
+  repartidor: '#059669',
+  tesoreria: '#D97706',
+}
 
 export default function Sidebar({ activo, onCambiar, onOpenHelp }) {
   const { usuario, logout } = useAuth()

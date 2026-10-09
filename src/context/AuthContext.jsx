@@ -8,13 +8,23 @@ export { USUARIOS }
 // asistente: arma rutas, valida pagos, NO aprueba
 // ti:        solo configuración y registros de auditoría
 export const PERMISOS = {
-  jefe:      ['inicio', 'algoritmo', 'rutas', 'cobranzas', 'config', 'registros'],
-  asistente: ['inicio', 'algoritmo', 'rutas', 'cobranzas'],
-  ti:        ['config', 'registros'],
+  jefe:          ['inicio', 'algoritmo', 'rutas', 'cobranzas', 'config', 'registros'],
+  asistente:     ['inicio', 'algoritmo', 'rutas', 'cobranzas'],
+  ti:            ['config', 'registros'],
+  administrador: ['config', 'registros'],
+  repartidor:    ['rutas'],
+  tesoreria:     ['cobranzas', 'registros'],
 }
 
 // Solo el Jefe / Coordinador puede aprobar rutas (RF-09 / ck_ruta_aprobacion)
-export const PUEDE_APROBAR = { jefe: true, asistente: false, ti: false }
+export const PUEDE_APROBAR = {
+  jefe: true,
+  asistente: false,
+  ti: false,
+  administrador: false,
+  repartidor: false,
+  tesoreria: false,
+}
 
 const AuthContext = createContext(null)
 

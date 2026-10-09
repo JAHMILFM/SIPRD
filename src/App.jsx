@@ -138,7 +138,8 @@ function AppInterna({ usuario, puede, puedeAprobar, log }) {
   const { toast } = useToast()
 
   // Módulo inicial según rol
-  const moduloInicial = puede('inicio') ? 'inicio' : puede('config') ? 'config' : 'registros'
+  const ORDEN_MODULOS = ['inicio', 'algoritmo', 'rutas', 'cobranzas', 'config', 'registros']
+  const moduloInicial = ORDEN_MODULOS.find(m => puede(m)) || 'inicio'
 
   const [modulo, setModulo]         = useState(moduloInicial)
   const [criterio, setCriterio]     = useState('jornada')
