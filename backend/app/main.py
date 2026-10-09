@@ -84,11 +84,14 @@ async def salud():
         "entorno": settings.ENTORNO
     }
 
+from sqlalchemy import select
+from backend.app.models import Usuario
+
 @app.get("/listo", tags=["Sistema"])
 async def listo():
     try:
         async with AsyncSessionLocal() as session:
-            await session.execute(Base.metadata.tables["usuario"].select().limit(1))
+            await session.execute(select(Usuario).limit(1))
         return {"estado": "LISTO", "bd": "CONECTADA"}
     except Exception as e:
         return JSONResponse(

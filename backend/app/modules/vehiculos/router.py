@@ -39,7 +39,7 @@ async def listar_vehiculos(
 ):
     query = select(Vehiculo)
     if disponibles is True:
-        query = query.where(Vehiculo.activo == True, Vehiculo.estado_operativo == "OPERATIVO")
+        query = query.where(Vehiculo.activo == True, Vehiculo.estado.in_(["DISPONIBLE", "ASIGNADO"]))
     
     result = await db.execute(query)
     vehiculos = result.scalars().all()

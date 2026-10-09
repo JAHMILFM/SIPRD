@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from pydantic import BaseModel
 from typing import Optional, List
+from datetime import date
 from backend.app.core.db import get_db
 from backend.app.core.seguridad import require_roles
 from backend.app.core.errores import ErrorNoEncontrado, ErrorReglaNegocio
@@ -23,11 +24,18 @@ async def listar_pedidos(
     db: AsyncSession = Depends(get_db),
     usuario: dict = Depends(require_roles(["ASISTENTE", "JEFE", "ADMINISTRADOR", "TESORERIA"]))
 ):
-    query = select(Pedido, Cliente).join(Cliente, Pedido.cliente_id == Cliente.id)
+    query = select(Pedido, Cliente).join(Cliente, Pedido.id_cliente == Cliente.id_cliente)
     if estado:
         query = query.where(Pedido.estado == estado.upper())
     if fecha:
-        query = query.where(Pedido.fecha_corte == fecha)
+        try:
+            if "/" in fecha:
+                d, m, y = map(int, fecha.split("/"))
+                query = query.where(Pedido.fecha_programada == date(y, m, d))
+            else:
+                query = query.where(Pedido.fecha_programada == date.fromisoformat(fecha))
+        except Exception:
+            query = query.where(Pedido.fecha_corte == fecha)
     
     result = await db.execute(query)
     filas = result.all()

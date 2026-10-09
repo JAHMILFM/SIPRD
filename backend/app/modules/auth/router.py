@@ -29,7 +29,7 @@ async def login(req: LoginRequest, response: Response, request: Request, db: Asy
     # Buscar por usuario o correo sin distinguir mayúsculas
     term = req.usuario.strip().lower()
     query = select(Usuario).where(
-        (Usuario.usuario.ilike(term)) | (Usuario.correo.ilike(term))
+        (Usuario.correo.ilike(term)) | (Usuario.correo.ilike(f"{term}@%"))
     )
     result = await db.execute(query)
     user = result.scalars().first()

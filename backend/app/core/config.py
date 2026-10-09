@@ -9,8 +9,14 @@ class Settings(BaseSettings):
     ENTORNO: str = "desarrollo"
     DEBUG: bool = True
     
-    # Base de datos: por defecto SQLite local para desarrollo inmediato sin dependencias externas
-    # En producción o con docker: postgresql+asyncpg://siprd_user:siprd_pass@localhost:5432/siprd_db
+    # Configuración PostgreSQL formal (siprd_db)
+    POSTGRES_USER: str = os.getenv("POSTGRES_USER", "postgres")
+    POSTGRES_PASSWORD: str = os.getenv("POSTGRES_PASSWORD", "postgres")
+    POSTGRES_HOST: str = os.getenv("POSTGRES_HOST", "localhost")
+    POSTGRES_PORT: int = int(os.getenv("POSTGRES_PORT", "5432"))
+    POSTGRES_DB: str = os.getenv("POSTGRES_DB", "siprd_db")
+
+    # Base de datos: por defecto PostgreSQL si está configurado, con soporte a SQLite local
     DATABASE_URL: str = Field(default_factory=lambda: os.getenv(
         "DATABASE_URL", 
         f"sqlite+aiosqlite:///{os.path.abspath('backend/siprd_dev.db')}"
