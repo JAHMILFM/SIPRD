@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useAudit } from '../context/AuditContext'
 import { useToast } from '../context/ToastContext'
 
@@ -23,10 +23,66 @@ const ROL_CHIP = {
  * Permite filtrar por módulo, buscar y exportar a CSV para auditoría (Heurística #7).
  */
 export default function Registros() {
-  const { registros } = useAudit()
+  const { registros: registrosLocales } = useAudit()
   const { toast }     = useToast()
-  const [filtroMod, setFiltroMod] = useState('todos')
-  const [busca, setBusca]         = useState('')
+  const [registrosApi, setRegistrosApi] = useState([])
+  const [cargandoApi, setCargandoApi]   = useState(false)
+  const [filtroMod, setFiltroMod]       = useState('todos')
+  const [busca, setBusca]               = useState('')
+
+  useEffect(() => {
+    let activo = true
+    async function cargarAuditoria() {
+      setCargandoApi(true)
+      try {
+        const token = localStorage.getItem('siprd_access_token')
+        const headers = token ? { Authorization: `Bearer ${token}` } : {}
+        const res = await fetch('/api/v1/auditoria?limite=100', { headers })
+        if (res.ok) {
+          const data = await res.json()
+          if (activo && Array.isArray(data) && data.length > 0) {
+            const adaptados = data.map(item => {
+              const dt = new Date(item.fecha)
+              const modMap = {
+                planificacion: 'Algoritmo',
+                planificacion_version: 'Rutas',
+                ruta: 'Rutas',
+                parada: 'Rutas',
+                cobro: 'Cobranzas',
+                comprobante_pago: 'Cobranzas',
+                usuario: 'Configuración',
+                vehiculo: 'Configuración',
+                regla_atencion: 'Configuración',
+                general: 'Sesión'
+              }
+              const modNormalizado = modMap[item.entidad?.toLowerCase()] || (item.entidad ? (item.entidad.charAt(0).toUpperCase() + item.entidad.slice(1)) : 'General')
+              return {
+                id: item.id?.slice(0, 8) || '0',
+                fecha: dt.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+                hora: dt.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+                usuario: item.usuario_id ? `Usuario (${item.usuario_id.slice(0, 6)})` : 'Dennys Huerta',
+                rolUsuario: 'jefe',
+                modulo: modNormalizado,
+                accion: item.accion || 'OPERACION',
+                detalle: item.valores_despues ? JSON.stringify(item.valores_despues) : (item.entidad_id ? `Ref: ${item.entidad_id.slice(0, 8)}` : 'Registro auditado en BD')
+              }
+            })
+            setRegistrosApi(adaptados)
+          }
+        }
+      } catch {
+        // Fallback local silencioso
+      } finally {
+        if (activo) setCargandoApi(false)
+      }
+    }
+    cargarAuditoria()
+    return () => { activo = false }
+  }, [])
+
+  const registros = useMemo(() => {
+    return registrosApi.length > 0 ? registrosApi : registrosLocales
+  }, [registrosApi, registrosLocales])
 
   const modulos = useMemo(() => [...new Set(registros.map(r => r.modulo))], [registros])
 
@@ -208,7 +264,14 @@ export default function Registros() {
                         {r.modulo}
                       </span>
                     </td>
-                    <td style={{ fontWeight: 600, fontSize: 12 }}>{r.accion}</td>
+                    <td style={{ fontWeight: 600, fontSize: 12 }}>
+                      {r.accion}
+                      {r.accion_db && (
+                        <span style={{ display: 'block', fontSize: 9.5, color: '#64748b', fontFamily: 'monospace', marginTop: 2 }}>
+                          [{r.accion_db}] · {r.entidad || 'sistema'}
+                        </span>
+                      )}
+                    </td>
                     <td style={{ color: '#475569', fontSize: 11.5, maxWidth: 300 }}>{r.detalle}</td>
                   </tr>
                 )

@@ -333,6 +333,18 @@ export default function Cobranzas() {
                 <span>📥</span>
                 <span>Exportar CSV</span>
               </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  window.open('/api/v1/cobros/exportacion.xlsx', '_blank')
+                  toast.success('Descargando arqueo de cobranzas en Excel...')
+                }}
+                title="Descargar libro Excel oficial para arqueo de caja (openpyxl)"
+              >
+                <span>📊</span>
+                <span>Exportar Excel (Arqueo)</span>
+              </button>
             </div>
           </div>
 

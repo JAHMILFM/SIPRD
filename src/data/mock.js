@@ -6,13 +6,13 @@ export const FECHA = '27/08/2026'
 export const ALMACEN = 'Almacén Lurín'
 
 export const VEHICULOS = [
-  { placa: 'BCE-869', marca: 'Hyundai', conductor: 'Elías López',     pesoMax: 12, volMax: 32 },
-  { placa: 'DB8-877', marca: 'Toyota',  conductor: 'Marcos Camacho',  pesoMax: 12, volMax: 32 },
-  { placa: 'AFG-747', marca: 'Suzuki',  conductor: 'Giancarlo Ruiz',  pesoMax: 8,  volMax: 21 },
-  { placa: 'BHL-751', marca: 'Kia',     conductor: 'Kevin Vargas',    pesoMax: 8,  volMax: 21 },
-  { placa: 'XXX-000', marca: 'Isuzu',   conductor: 'Maycol Yance',    pesoMax: 8,  volMax: 21 },
-  { placa: 'BUE-734', marca: 'Hino',    conductor: 'Luis Ordoñez',    pesoMax: 8,  volMax: 21 },
-  { placa: 'AFG-748', marca: 'Foton',   conductor: 'Héctor Salas',    pesoMax: 6,  volMax: 16 },
+  { id: 'v1', id_vehiculo: 1, codigo_externo: 'VEH-001', placa: 'BCE-869', marca: 'Hyundai', modelo: 'HD78', año: 2021, conductor: 'Elías López',     capacidad_kg: 12000, pesoMax: 12, capacidad_m3: 32, volMax: 32, estado: 'ASIGNADO', activo: true },
+  { id: 'v2', id_vehiculo: 2, codigo_externo: 'VEH-002', placa: 'DB8-877', marca: 'Toyota',  modelo: 'Dyna', año: 2020, conductor: 'Marcos Camacho',  capacidad_kg: 12000, pesoMax: 12, capacidad_m3: 32, volMax: 32, estado: 'ASIGNADO', activo: true },
+  { id: 'v3', id_vehiculo: 3, codigo_externo: 'VEH-003', placa: 'AFG-747', marca: 'Suzuki',  modelo: 'Super Carry', año: 2019, conductor: 'Giancarlo Ruiz',  capacidad_kg: 8000,  pesoMax: 8,  capacidad_m3: 21, volMax: 21, estado: 'ASIGNADO', activo: true },
+  { id: 'v4', id_vehiculo: 4, codigo_externo: 'VEH-004', placa: 'BHL-751', marca: 'Kia',     modelo: 'Bongo', año: 2022, conductor: 'Kevin Vargas',    capacidad_kg: 8000,  pesoMax: 8,  capacidad_m3: 21, volMax: 21, estado: 'ASIGNADO', activo: true },
+  { id: 'v5', id_vehiculo: 5, codigo_externo: 'VEH-005', placa: 'XXX-000', marca: 'Isuzu',   modelo: 'N-Series', año: 2018, conductor: 'Maycol Yance',    capacidad_kg: 8000,  pesoMax: 8,  capacidad_m3: 21, volMax: 21, estado: 'ASIGNADO', activo: true },
+  { id: 'v6', id_vehiculo: 6, codigo_externo: 'VEH-006', placa: 'BUE-734', marca: 'Hino',    modelo: '300', año: 2020, conductor: 'Luis Ordoñez',    capacidad_kg: 8000,  pesoMax: 8,  capacidad_m3: 21, volMax: 21, estado: 'MANTENIMIENTO', activo: false },
+  { id: 'v7', id_vehiculo: 7, codigo_externo: 'VEH-007', placa: 'AFG-748', marca: 'Foton',   modelo: 'Aumark', año: 2017, conductor: 'Héctor Salas',    capacidad_kg: 6000,  pesoMax: 6,  capacidad_m3: 16, volMax: 16, estado: 'INACTIVO', activo: false },
 ]
 
 export const COLORES_RUTA = ['#2563EB', '#16A34A', '#DC2626', '#9333EA', '#F59E0B', '#0891B2', '#DB2777']
@@ -111,16 +111,36 @@ for (let i = 0; i < 35; i++) {
 // RF-04: vehículo sugerido por Distribución según zona geográfica.
 // El algoritmo puede reasignar si la capacidad lo requiere.
 const ZONA_VEH = { Norte: 'BCE-869', Este: 'DB8-877', Sur: 'BHL-751', Centro: 'XXX-000' }
-export const PEDIDOS = [...PEDIDOS_BASE, ...EXTRA].map(p => ({
-  ...p,
-  vehiculoSugerido: ZONA_VEH[p.zona] ?? '—',
-}))
+const ZONA_VEH_ID = { Norte: 1, Este: 2, Sur: 4, Centro: 5 }
+
+export const PEDIDOS = [...PEDIDOS_BASE, ...EXTRA].map((p, idx) => {
+  const [hIni, hFin] = (p.ventana && p.ventana.includes('–')) ? p.ventana.split('–') : [null, null]
+  return {
+    ...p,
+    id_pedido: Number(p.id) || (9300000 + idx),
+    codigo_externo: String(p.id),
+    id_cliente: 100 + idx,
+    id_vehiculo: ZONA_VEH_ID[p.zona] ?? null,
+    fecha_pedido: '2026-08-26T18:00:00Z',
+    fecha_programada: '2026-08-27',
+    peso_kg: p.peso,
+    volumen_m3: p.vol,
+    importe: Number((p.peso * 2.8).toFixed(2)),
+    estado: 'PENDIENTE',
+    habilitado_despacho: true,
+    origen: 'TOMAPEDIDOS',
+    tiempo_servicio_min: p.servicio,
+    hora_inicio: hIni ? `${hIni.trim()}:00` : null,
+    hora_fin: hFin ? `${hFin.trim()}:00` : null,
+    vehiculoSugerido: ZONA_VEH[p.zona] ?? '—',
+  }
+})
 
 // Pedidos que llegaron sin coordenadas utilizables. En el flujo real vienen de
 // Tomapedidos y necesitan corrección manual antes de poder rutearse.
 export const NO_PLANIFICABLES = [
-  { id: '9304011', cliente: 'MERCADO CENTRAL PTO. 44', motivo: 'Coordenadas fuera del área de reparto', detalle: 'Lat/Lng apunta a Huarochirí' },
-  { id: '9304077', cliente: 'BODEGA SAN MARTÍN',       motivo: 'Sin coordenadas',                      detalle: 'Campo vacío en el pedido' },
-  { id: '9304102', cliente: 'FARMACIA LA MERCED',      motivo: 'Coordenadas inválidas (0, 0)',         detalle: 'Registro por defecto no corregido' },
-  { id: '9304190', cliente: 'MINIMARKET EL ROSAL',     motivo: 'Punto sin acceso vial',                detalle: 'OSRM no encuentra ruta al punto' },
+  { id: '9304011', id_pedido: 9304011, codigo_externo: '9304011', cliente: 'MERCADO CENTRAL PTO. 44', motivo: 'Coordenadas fuera del área de reparto', detalle: 'Lat/Lng apunta a Huarochirí', habilitado_despacho: false, estado: 'BLOQUEADO', origen: 'TOMAPEDIDOS' },
+  { id: '9304077', id_pedido: 9304077, codigo_externo: '9304077', cliente: 'BODEGA SAN MARTÍN',       motivo: 'Sin coordenadas',                      detalle: 'Campo vacío en el pedido', habilitado_despacho: false, estado: 'BLOQUEADO', origen: 'TOMAPEDIDOS' },
+  { id: '9304102', id_pedido: 9304102, codigo_externo: '9304102', cliente: 'FARMACIA LA MERCED',      motivo: 'Coordenadas inválidas (0, 0)',         detalle: 'Registro por defecto no corregido', habilitado_despacho: false, estado: 'BLOQUEADO', origen: 'TOMAPEDIDOS' },
+  { id: '9304190', id_pedido: 9304190, codigo_externo: '9304190', cliente: 'MINIMARKET EL ROSAL',     motivo: 'Punto sin acceso vial',                detalle: 'OSRM no encuentra ruta al punto', habilitado_despacho: false, estado: 'BLOQUEADO', origen: 'TOMAPEDIDOS' },
 ]

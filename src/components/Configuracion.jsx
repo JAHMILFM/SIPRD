@@ -28,10 +28,13 @@ const inputStyle = {
   outline: 'none',
 }
 
-// ── Sub-formulario Vehículo ───────────────────────────────────
+// ── Sub-formulario Vehículo (Alineado con siprd.vehiculos) ──────
 function VehiculoRow({ v, onSave }) {
   const [edit, setEdit] = useState(false)
-  const [form, setForm] = useState({ ...v })
+  const [form, setForm] = useState({
+    ...v,
+    estado: v.estado || (v.activo ? 'DISPONIBLE' : 'INACTIVO'),
+  })
 
   const f = (k) => (e) => {
     let val = e.target.value
@@ -41,20 +44,42 @@ function VehiculoRow({ v, onSave }) {
   }
   
   const guardar = () => {
+    const pMax = Number(form.pesoMax) || 1
+    const vMax = Number(form.volMax) || 1
+    const st = form.estado || (form.activo ? 'DISPONIBLE' : 'INACTIVO')
+    const act = st !== 'MANTENIMIENTO' && st !== 'INACTIVO'
+
     onSave({
       ...form,
-      pesoMax: Number(form.pesoMax) || 1,
-      volMax: Number(form.volMax) || 1,
+      capacidad_kg: pMax * 1000,
+      capacidad_m3: vMax,
+      pesoMax: pMax,
+      volMax: vMax,
+      estado: st,
+      activo: act,
       conductor: String(form.conductor || '').trim() || 'Sin conductor asignado',
     })
     setEdit(false)
+  }
+
+  const estadoBadge = (st) => {
+    const map = {
+      DISPONIBLE: ['c-gn', '✓ DISPONIBLE'],
+      ASIGNADO: ['c-md', '🚚 ASIGNADO'],
+      MANTENIMIENTO: ['c-hi', '🔧 MANTENIMIENTO'],
+      INACTIVO: ['c-lo', '✕ INACTIVO'],
+    }
+    const [cls, label] = map[st] ?? ['c-lo', st]
+    return <span className={`chip ${cls}`}>{label}</span>
   }
 
   return (
     <tr style={{ background: !v.activo ? '#fafafa' : undefined }}>
       <td>
         <span style={{ fontWeight: 700, fontSize: 12.5, color: 'var(--ink)' }}>{v.placa}</span>
-        <span style={{ display: 'block', color: '#64748b', fontSize: 10.5 }}>{v.marca} {v.modelo} · {v.año}</span>
+        <span style={{ display: 'block', color: '#64748b', fontSize: 10.5 }}>
+          {v.codigo_externo ? `${v.codigo_externo} · ` : ''}{v.marca} {v.modelo} · {v.año || 2022}
+        </span>
       </td>
       <td>
         {edit ? (
@@ -71,18 +96,26 @@ function VehiculoRow({ v, onSave }) {
       </td>
       <td className="num">
         {edit ? (
-          <input
-            type="number"
-            value={form.pesoMax}
-            onChange={f('pesoMax')}
-            style={{ ...inputStyle, width: 64, textAlign: 'right' }}
-            min={0.5}
-            max={30}
-            step={0.5}
-            aria-label="Peso máximo en toneladas"
-          />
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
+            <input
+              type="number"
+              value={form.pesoMax}
+              onChange={f('pesoMax')}
+              style={{ ...inputStyle, width: 68, textAlign: 'right' }}
+              min={0.5}
+              max={30}
+              step={0.5}
+              aria-label="Peso máximo en toneladas"
+            />
+            <span style={{ fontSize: 9.5, color: '#64748b' }}>{(Number(form.pesoMax) || 0) * 1000} kg</span>
+          </div>
         ) : (
-          <><strong>{v.pesoMax}</strong> t</>
+          <>
+            <strong>{v.pesoMax}</strong> t
+            <span style={{ display: 'block', fontSize: 10, color: '#64748b' }}>
+              {(v.capacidad_kg ?? (v.pesoMax * 1000)).toLocaleString('es-PE')} kg
+            </span>
+          </>
         )}
       </td>
       <td className="num">
@@ -103,13 +136,26 @@ function VehiculoRow({ v, onSave }) {
       </td>
       <td>
         {edit ? (
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>
-            <input type="checkbox" checked={form.activo} onChange={f('activo')} /> Activo en flota
-          </label>
+          <select
+            value={form.estado || (form.activo ? 'DISPONIBLE' : 'INACTIVO')}
+            onChange={(e) => {
+              const nuevoEstado = e.target.value
+              setForm(p => ({
+                ...p,
+                estado: nuevoEstado,
+                activo: nuevoEstado !== 'MANTENIMIENTO' && nuevoEstado !== 'INACTIVO',
+              }))
+            }}
+            style={{ ...inputStyle, fontSize: 11, padding: '4px 6px' }}
+            aria-label="Estado operativo del vehículo en base de datos"
+          >
+            <option value="DISPONIBLE">DISPONIBLE</option>
+            <option value="ASIGNADO">ASIGNADO</option>
+            <option value="MANTENIMIENTO">MANTENIMIENTO</option>
+            <option value="INACTIVO">INACTIVO</option>
+          </select>
         ) : (
-          <span className={`chip ${v.activo ? 'c-gn' : 'c-lo'}`}>
-            {v.activo ? '✓ Activo' : '✕ Inactivo'}
-          </span>
+          estadoBadge(v.estado || (v.activo ? 'DISPONIBLE' : 'INACTIVO'))
         )}
       </td>
       <td style={{ textAlign: 'center' }}>
@@ -126,7 +172,7 @@ function VehiculoRow({ v, onSave }) {
   )
 }
 
-// ── Sub-formulario Regla ──────────────────────────────────────
+// ── Sub-formulario Regla (Alineado con siprd.reglas_cliente) ───
 function ReglaRow({ r, onSave, onDelete }) {
   const [edit, setEdit]         = useState(false)
   const [form, setForm]         = useState({ ...r, dias: r.dias ? [...r.dias] : null })
@@ -139,7 +185,18 @@ function ReglaRow({ r, onSave, onDelete }) {
 
   const guardar = () => {
     const clienteNombre = form.cliente?.trim() || 'Cliente Sin Nombre'
-    onSave({ ...form, cliente: clienteNombre, dias: sinRestr ? null : form.dias })
+    const [hIni, hFin] = (form.ventana && form.ventana.includes('–')) ? form.ventana.split('–') : [null, null]
+
+    onSave({
+      ...form,
+      cliente: clienteNombre,
+      dias: sinRestr ? null : form.dias,
+      tipo_regla: form.tipo_regla || 'VENTANA_HORARIA',
+      hora_inicio: hIni ? `${hIni.trim()}:00` : null,
+      hora_fin: hFin ? `${hFin.trim()}:00` : null,
+      es_restriccion_dura: form.es_restriccion_dura ?? true,
+      activa: true,
+    })
     setEdit(false)
   }
 

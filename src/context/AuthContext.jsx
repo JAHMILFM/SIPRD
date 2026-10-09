@@ -1,23 +1,7 @@
 import { createContext, useContext, useState, useCallback, useMemo } from 'react'
+import { USUARIOS } from '../data/mockUsuarios.js'
 
-// ── Usuarios del sistema ──────────────────────────────────────
-export const USUARIOS = [
-  {
-    id: 'u1', usuario: 'dhuerta', clave: 'jefe123',
-    nombre: 'Dennys Huerta', iniciales: 'DH',
-    titulo: 'Jefe de Distribución', rol: 'jefe',
-  },
-  {
-    id: 'u2', usuario: 'asistente', clave: 'dist123',
-    nombre: 'Lesli Pomalaya', iniciales: 'LP',
-    titulo: 'Asistente de Distribución', rol: 'asistente',
-  },
-  {
-    id: 'u3', usuario: 'admin.ti', clave: 'ti2026',
-    nombre: 'Área de TI', iniciales: 'TI',
-    titulo: 'Administrador TI', rol: 'ti',
-  },
-]
+export { USUARIOS }
 
 // ── Permisos por rol (RNF-02) ─────────────────────────────────
 // jefe:      aprueba rutas, accede a todo
@@ -29,7 +13,7 @@ export const PERMISOS = {
   ti:        ['config', 'registros'],
 }
 
-// Solo el Jefe / Coordinador puede aprobar rutas (RF-09)
+// Solo el Jefe / Coordinador puede aprobar rutas (RF-09 / ck_ruta_aprobacion)
 export const PUEDE_APROBAR = { jefe: true, asistente: false, ti: false }
 
 const AuthContext = createContext(null)
@@ -44,10 +28,33 @@ export function AuthProvider({ children }) {
     }
   })
 
-  const login = useCallback((user, clave) => {
-    // TODO BACKEND: POST /api/auth/login
-    // Validar credenciales contra el backend (JWT, Active Directory, etc.)
-    const u = USUARIOS.find(u => u.usuario === user && u.clave === clave)
+  const login = useCallback(async (user, clave) => {
+    // 1. Intento de autenticación real contra el backend FastAPI
+    try {
+      const res = await fetch('/api/v1/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ usuario: user, clave })
+      })
+      if (res.ok) {
+        const data = await res.json()
+        if (data.access_token) {
+          localStorage.setItem('siprd_access_token', data.access_token)
+        }
+        if (data.usuario) {
+          setUsuario(data.usuario)
+          try {
+            localStorage.setItem('siprd_session', JSON.stringify(data.usuario))
+          } catch {}
+          return true
+        }
+      }
+    } catch {
+      // Si la API no está disponible en este momento, fallback al catálogo local
+    }
+
+    // 2. Fallback local / offline
+    const u = USUARIOS.find(u => (u.usuario === user || u.correo === user) && u.clave === clave)
     if (!u) return false
 
     // Sanitizar credenciales para no persistir contraseña en localStorage

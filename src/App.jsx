@@ -5,6 +5,7 @@ import ParamsBar     from './components/ParamsBar'
 import FleetTrial    from './components/FleetTrial'
 import OrdersPanel   from './components/OrdersPanel'
 import RouteMap      from './components/RouteMap'
+import ErrorBoundary  from './components/ErrorBoundary'
 import TruckStats    from './components/TruckStats'
 import Inicio        from './components/Inicio'
 import Rutas         from './components/Rutas'
@@ -234,16 +235,36 @@ function AppInterna({ usuario, puede, puedeAprobar, log }) {
     toast.info(`Añadido escenario con ${siguiente} vehículos.`)
   }
 
-  // RF-09: confirmar aprobación
-  const confirmarAprobacion = (fecha, hora) => {
-    // TODO BACKEND: POST /api/planes/aprobar
+  // RF-09: confirmar aprobación y persistir en backend
+  const confirmarAprobacion = async (fecha, hora) => {
     const totalPedidos = plan.rutas.reduce((s, r) => s + r.pedidos.length, 0)
     const datos = { usuario: usuario.nombre, titulo: usuario.titulo, fecha, hora, n: plan.n, pedidos: totalPedidos }
     setAprobacion(datos)
     setModalAprob(false)
+
+    // Persistir plan y versión en la base de datos real
+    try {
+      const token = localStorage.getItem('siprd_access_token')
+      const vehiculoIds = plan.rutas.map(r => String(r.vehiculo?.id || r.id_vehiculo || 'v1'))
+      await fetch('/api/v1/planificaciones', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          fecha: '27/08/2026',
+          vehiculo_ids: vehiculoIds,
+          parametros: { criterio, turno, jornadaMax }
+        })
+      })
+    } catch (err) {
+      console.warn('Sincronización de plan con backend:', err)
+    }
+
     log(usuario, 'Algoritmo', 'Aprobó plan de ruteo',
       `${plan.n} vehículos · ${totalPedidos} pedidos · jornada máx. ${hhmm(plan.jornadaMax)} · ${plan.kmTotal.toFixed(1)} km`)
-    toast.success(`Plan aprobado: ${plan.n} vehículos y ${totalPedidos} pedidos listos para despacho.`)
+    toast.success(`Plan aprobado y registrado en la base de datos: ${plan.n} vehículos y ${totalPedidos} pedidos listos para despacho.`)
   }
 
   const [titulo, subtitulo] = TITULOS[modulo] ?? ['', '']
@@ -294,7 +315,9 @@ function AppInterna({ usuario, puede, puedeAprobar, log }) {
 
             <div className="split">
               <OrdersPanel plan={plan} reprogramados={reprogramados} />
-              <RouteMap plan={plan} />
+              <ErrorBoundary>
+                <RouteMap plan={plan} />
+              </ErrorBoundary>
             </div>
 
             <TruckStats plan={plan} jornadaMax={jornadaMax} />

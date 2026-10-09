@@ -1,8 +1,10 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { RUTAS_ACTIVAS } from '../data/mockRutas'
 import { useAuth } from '../context/AuthContext'
 import { useAudit } from '../context/AuditContext'
 import { useToast } from '../context/ToastContext'
+import RouteMap from './RouteMap'
+import ErrorBoundary from './ErrorBoundary'
 
 /**
  * Módulo Rutas — gestión en vivo.
@@ -13,10 +15,19 @@ import { useToast } from '../context/ToastContext'
 
 const ESTADO_CHIP = {
   entregado: { label: 'Entregado',  clase: 'c-gn', icon: '✓' },
-  en_camino: { label: 'En camino', clase: 'c-md', icon: '🚚' },
-  pendiente: { label: 'Pendiente', clase: 'c-lo', icon: '⏳' },
-  bloqueado: { label: 'Bloqueado', clase: 'c-hi', icon: '🔒' },
+  ATENDIDA:  { label: 'Atendida',   clase: 'c-gn', icon: '✓' },
+  en_camino: { label: 'En camino',  clase: 'c-md', icon: '🚚' },
+  EN_CAMINO: { label: 'En camino',  clase: 'c-md', icon: '🚚' },
+  pendiente: { label: 'Pendiente',  clase: 'c-lo', icon: '⏳' },
+  PENDIENTE: { label: 'Pendiente',  clase: 'c-lo', icon: '⏳' },
+  NO_ATENDIDA: { label: 'No atendida', clase: 'c-hi', icon: '✕' },
+  CANCELADA: { label: 'Cancelada',  clase: 'c-hi', icon: '✕' },
+  bloqueado: { label: 'Bloqueado',  clase: 'c-hi', icon: '🔒' },
 }
+
+const esEntregada = (p) => p && (p.estado === 'entregado' || p.estado === 'ATENDIDA')
+const esEnCamino  = (p) => p && (p.estado === 'en_camino' || p.estado === 'EN_CAMINO')
+const esPendiente = (p) => p && (p.estado === 'pendiente' || p.estado === 'PENDIENTE')
 
 function chipEstado(estado, bloqueado) {
   const key = bloqueado ? 'bloqueado' : estado
@@ -67,17 +78,17 @@ export default function Rutas() {
     mutarRuta(ps => {
       const idx = ps.findIndex(p => p.id === paradaId)
       // No mover si es primera o si la parada anterior ya fue entregada
-      if (idx <= 0 || ps[idx - 1].estado === 'entregado') return ps
+      if (idx <= 0 || esEntregada(ps[idx - 1])) return ps
       logP = ps[idx]
       oldPos = idx + 1
       newPos = idx
       const a = [...ps];
       [a[idx - 1], a[idx]] = [a[idx], a[idx - 1]]
-      return a.map((p, i) => ({ ...p, orden: i + 1 }))
+      return a.map((p, i) => ({ ...p, orden: i + 1, secuencia: i + 1 }))
     })
 
     if (logP) {
-      log(usuario, 'Rutas', 'Reordenó parada (subió)', `${logP.cliente} · ${rutaActiva}`)
+      log(usuario, 'Rutas', 'Reordenó parada (subió)', `${logP.cliente} · ${rutaActiva}`, { entidad: 'paradas_ruta', id_entidad: logP.id_parada ?? oldPos, accion_db: 'ACTUALIZAR' })
       toast.info(`Parada #${oldPos} (${logP.cliente}) movida a posición #${newPos}`, {
         duration: 5000,
         action: {
@@ -100,17 +111,17 @@ export default function Rutas() {
     mutarRuta(ps => {
       const idx = ps.findIndex(p => p.id === paradaId)
       // No mover si es la última o si la parada posterior está bloqueada/entregada
-      if (idx < 0 || idx >= ps.length - 1 || ps[idx + 1].estado === 'entregado') return ps
+      if (idx < 0 || idx >= ps.length - 1 || esEntregada(ps[idx + 1])) return ps
       logP = ps[idx]
       oldPos = idx + 1
       newPos = idx + 2
       const a = [...ps];
       [a[idx], a[idx + 1]] = [a[idx + 1], a[idx]]
-      return a.map((p, i) => ({ ...p, orden: i + 1 }))
+      return a.map((p, i) => ({ ...p, orden: i + 1, secuencia: i + 1 }))
     })
 
     if (logP) {
-      log(usuario, 'Rutas', 'Reordenó parada (bajó)', `${logP.cliente} · ${rutaActiva}`)
+      log(usuario, 'Rutas', 'Reordenó parada (bajó)', `${logP.cliente} · ${rutaActiva}`, { entidad: 'paradas_ruta', id_entidad: logP.id_parada ?? oldPos, accion_db: 'ACTUALIZAR' })
       toast.info(`Parada #${oldPos} (${logP.cliente}) movida a posición #${newPos}`, {
         duration: 5000,
         action: {
@@ -172,14 +183,17 @@ export default function Rutas() {
     }, 1500)
   }
 
-  // ── Métricas y filtrado ──────────────────────────────────────
-  const ent = ruta.paradas.filter(p => p.estado === 'entregado').length
-  const enc = ruta.paradas.filter(p => p.estado === 'en_camino').length
-  const pen = ruta.paradas.filter(p => p.estado === 'pendiente').length
+  // ── Métricas y filtrado (Soporte dual interfaz y esquema siprd) ──
+  const ent = ruta.paradas.filter(esEntregada).length
+  const enc = ruta.paradas.filter(esEnCamino).length
+  const pen = ruta.paradas.filter(esPendiente).length
   const pct = ruta.paradas.length ? Math.round((ent / ruta.paradas.length) * 100) : 0
 
   const paradasVisibles = ruta.paradas.filter(p => {
     if (filtroEstado === 'todos') return true
+    if (filtroEstado === 'entregado' || filtroEstado === 'ATENDIDA') return esEntregada(p)
+    if (filtroEstado === 'en_camino' || filtroEstado === 'EN_CAMINO') return esEnCamino(p)
+    if (filtroEstado === 'pendiente' || filtroEstado === 'PENDIENTE') return esPendiente(p)
     return p.estado === filtroEstado
   })
 
@@ -189,7 +203,7 @@ export default function Rutas() {
       {/* Selector de rutas con affordances visuales claros */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
         {rutas.map(r => {
-          const entR  = r.paradas.filter(p => p.estado === 'entregado').length
+          const entR  = r.paradas.filter(esEntregada).length
           const totR  = r.paradas.length
           const pctR  = Math.round((entR / totR) * 100)
           const activ = r.id === rutaActiva
@@ -406,29 +420,17 @@ export default function Rutas() {
         </div>
       </div>
 
-      {/* Monitoreo GPS simulado */}
-      <div className="card">
-        <div className="ch">
+      {/* Monitoreo en Mapa Real Leaflet / OpenStreetMap */}
+      <div style={{ marginTop: 18 }}>
+        <div style={{ marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <h3>Monitoreo GPS en tiempo real</h3>
-            <p>Posición simulada · integración con App de Distribución vía WebSocket</p>
+            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#0f172a' }}>Monitoreo Satelital y Vial de Flota</h3>
+            <p style={{ margin: '3px 0 0', fontSize: 12, color: '#64748b' }}>Posicionamiento georreferenciado real en Lima Metropolitana con OpenStreetMap y capas de satélite</p>
           </div>
         </div>
-        <div style={{ position: 'relative', height: 240, background: 'linear-gradient(135deg,#0a1122,#1e293b)', borderRadius: '0 0 12px 12px', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ position: 'absolute', inset: 0, backgroundImage: 'linear-gradient(rgba(255,255,255,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.04) 1px,transparent 1px)', backgroundSize: '40px 40px' }} />
-          {rutas.map((r, ri) => (
-            r.paradas.filter(p => p.estado === 'entregado' || p.estado === 'en_camino').map((p, pi) => (
-              <div key={p.id} style={{ position: 'absolute', left: `${15 + ri * 18 + pi * 3}%`, top: `${20 + ri * 15 + pi * 8}%` }}>
-                <div style={{ width: p.estado === 'en_camino' ? 14 : 9, height: p.estado === 'en_camino' ? 14 : 9, borderRadius: '50%', background: p.estado === 'en_camino' ? r.color : r.color + '99', border: p.estado === 'en_camino' ? `2px solid #fff` : 'none', boxShadow: p.estado === 'en_camino' ? `0 0 14px ${r.color}` : 'none', transition: 'all .3s' }} />
-              </div>
-            ))
-          ))}
-          <div style={{ color: 'rgba(255,255,255,.6)', fontSize: 13, textAlign: 'center', zIndex: 1, padding: 16 }}>
-            <div style={{ fontSize: 32, marginBottom: 8 }}>📍</div>
-            <strong style={{ color: '#fff' }}>Monitoreo Activo de Flota en Ruta</strong><br />
-            <span style={{ fontSize: 11, color: '#94a3b8' }}>Visualización interactiva compatible con OpenStreetMap y OSRM</span>
-          </div>
-        </div>
+        <ErrorBoundary>
+          <RouteMap plan={{ rutas: rutas.map(r => ({ ...r, pedidos: r.paradas })) }} />
+        </ErrorBoundary>
       </div>
 
     </div>

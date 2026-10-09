@@ -77,15 +77,15 @@ export default function Login() {
     setError('')
 
     if (timerRef.current) clearTimeout(timerRef.current)
-    timerRef.current = setTimeout(() => {
-      const ok = login(usuario.trim(), clave)
+    timerRef.current = setTimeout(async () => {
+      const ok = await login(usuario.trim(), clave)
       if (isMountedRef.current) {
         if (!ok) {
           setError('Usuario o contraseña no válidos. Verifica tus credenciales de acceso.')
         }
         setCargando(false)
       }
-    }, 600)
+    }, 300)
   }
 
   const autoFill = (u) => {
@@ -154,7 +154,7 @@ export default function Login() {
           <form onSubmit={handleSubmit} className="login-form-new" noValidate>
             <div className="login-field-new">
               <label htmlFor="l-user">
-                Usuario <span style={{ color: '#dc2626' }}>*</span>
+                Usuario o Correo <span style={{ color: '#dc2626' }}>*</span>
               </label>
               <input
                 id="l-user"
@@ -166,13 +166,13 @@ export default function Login() {
                   setError('')
                 }}
                 onBlur={() => setTocado(p => ({ ...p, usuario: true }))}
-                placeholder="ej. dhuerta o asistente"
+                placeholder="ej. dhuerta o dhuerta@alfadistribuidores.com"
                 className={userInvalido ? 'is-invalid' : ''}
                 aria-required="true"
                 aria-invalid={userInvalido}
               />
               {userInvalido && (
-                <span className="login-helper error" role="alert">El nombre de usuario es obligatorio</span>
+                <span className="login-helper error" role="alert">El usuario o correo institucional es obligatorio</span>
               )}
             </div>
 

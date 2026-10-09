@@ -14,9 +14,9 @@ export default function Inicio() {
   const { totalRutas, totalParadas, entregados, enCamino, pendientes, montoTotal, pct, KPI } = useMemo(() => {
     const totRutas = RUTAS_ACTIVAS.length
     const totParadas = RUTAS_ACTIVAS.reduce((s, r) => s + r.paradas.length, 0)
-    const ent = RUTAS_ACTIVAS.reduce((s, r) => s + r.paradas.filter(p => p.estado === 'entregado').length, 0)
-    const enc = RUTAS_ACTIVAS.reduce((s, r) => s + r.paradas.filter(p => p.estado === 'en_camino').length, 0)
-    const pen = RUTAS_ACTIVAS.reduce((s, r) => s + r.paradas.filter(p => p.estado === 'pendiente').length, 0)
+    const ent = RUTAS_ACTIVAS.reduce((s, r) => s + r.paradas.filter(p => p.estado === 'entregado' || p.estado === 'ATENDIDA').length, 0)
+    const enc = RUTAS_ACTIVAS.reduce((s, r) => s + r.paradas.filter(p => p.estado === 'en_camino' || p.estado === 'EN_CAMINO').length, 0)
+    const pen = RUTAS_ACTIVAS.reduce((s, r) => s + r.paradas.filter(p => p.estado === 'pendiente' || p.estado === 'PENDIENTE').length, 0)
     const monto = RUTAS_ACTIVAS.reduce((s, r) => s + r.paradas.reduce((ss, p) => ss + (p.monto || 0), 0), 0)
     const porcentaje = totParadas > 0 ? Math.round((ent / totParadas) * 100) : 0
 
@@ -45,7 +45,7 @@ export default function Inicio() {
   const actividad = useMemo(() => {
     return RUTAS_ACTIVAS.flatMap(r =>
       r.paradas
-        .filter(p => p.estado === 'entregado')
+        .filter(p => p.estado === 'entregado' || p.estado === 'ATENDIDA')
         .map(p => ({ ...p, conductor: r.vehiculo.conductor, ruta: r.id, color: r.color }))
     ).sort((a, b) => String(b.horaReal ?? '').localeCompare(String(a.horaReal ?? '')))
   }, [])

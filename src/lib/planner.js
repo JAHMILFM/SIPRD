@@ -52,8 +52,8 @@ function proximoDiaHabil(dias, desde) {
 
 function costoPedido(p) {
   const baseKm = KM_ZONA[p.zona] ?? 3.4
-  const km = baseKm * (0.6 + hash(p.id) * 1.1)
-  const servicio = Number(p.servicio) || 15
+  const km = baseKm * (0.6 + hash(p.codigo_externo ?? p.id) * 1.1)
+  const servicio = Number(p.tiempo_servicio_min ?? p.servicio) || 15
   return { km, viaje: (km / VELOCIDAD) * 60, servicio }
 }
 
@@ -71,6 +71,8 @@ export function planificar(pedidos = [], n = 1) {
   const flota = VEHICULOS.slice(0, safeN)
   const rutas = flota.map((v, i) => ({
     id: `R${i + 1}`,
+    id_ruta: i + 1,
+    id_vehiculo: v.id_vehiculo ?? (i + 1),
     color: COLORES_RUTA[i % COLORES_RUTA.length],
     vehiculo: v,
     pedidos: [],
@@ -85,24 +87,36 @@ export function planificar(pedidos = [], n = 1) {
     const pa = pr[a.prioridad] ?? 3
     const pb = pr[b.prioridad] ?? 3
     if (pa !== pb) return pa - pb
-    return (b.peso ?? 0) - (a.peso ?? 0)
+    const pesoA = a.peso_kg ?? a.peso ?? 0
+    const pesoB = b.peso_kg ?? b.peso ?? 0
+    return pesoB - pesoA
   })
 
   const sinAsignar = []
 
   for (const p of orden) {
     const c = costoPedido(p)
-    const pPesoT = (p.peso ?? 0) / 1000
-    const pVolM3 = (p.vol ?? 0) * 3.2
+    const pPesoT = (p.peso_kg ?? p.peso ?? 0) / 1000
+    const pVolM3 = (p.volumen_m3 ?? p.vol ?? 0) * 3.2
 
     const aptas = rutas
-      .filter((r) => r.peso + pPesoT <= r.vehiculo.pesoMax && r.vol + pVolM3 <= r.vehiculo.volMax)
+      .filter((r) => {
+        const vPesoMax = r.vehiculo.pesoMax ?? (r.vehiculo.capacidad_kg ? r.vehiculo.capacidad_kg / 1000 : 12)
+        const vVolMax  = r.vehiculo.volMax  ?? (r.vehiculo.capacidad_m3 ?? 32)
+        return r.peso + pPesoT <= vPesoMax && r.vol + pVolM3 <= vVolMax
+      })
       .sort((a, b) => a.minutos - b.minutos)
 
     if (aptas.length === 0) {
       // RF-06: identificar qué restricción impidió la asignación
-      const sinPeso = rutas.every(r => r.peso + pPesoT > r.vehiculo.pesoMax)
-      const sinVol  = rutas.every(r => r.vol  + pVolM3 > r.vehiculo.volMax)
+      const sinPeso = rutas.every(r => {
+        const vPesoMax = r.vehiculo.pesoMax ?? (r.vehiculo.capacidad_kg ? r.vehiculo.capacidad_kg / 1000 : 12)
+        return r.peso + pPesoT > vPesoMax
+      })
+      const sinVol  = rutas.every(r => {
+        const vVolMax  = r.vehiculo.volMax  ?? (r.vehiculo.capacidad_m3 ?? 32)
+        return r.vol  + pVolM3 > vVolMax
+      })
       const motivo  = sinPeso && sinVol ? 'Excede peso y volumen disponibles en toda la flota'
                     : sinPeso           ? 'Excede el peso máximo de todos los vehículos'
                     :                    'Excede el volumen máximo disponible'

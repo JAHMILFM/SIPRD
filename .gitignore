@@ -47,3 +47,16 @@ coverage/
 # ── Misc ──────────────────────────────────────────────────
 *.zip
 *.tgz
+
+# ── Python & Base de datos local ──────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+*.db
+*.sqlite3
+
