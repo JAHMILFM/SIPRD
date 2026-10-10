@@ -3,13 +3,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.models import Auditoria
 from backend.app.core.tiempo import ahora
 
-VALID_ACCIONES = {'CREAR', 'ACTUALIZAR', 'ELIMINAR', 'APROBAR', 'PUBLICAR', 'REOPTIMIZAR'}
+VALID_ACCIONES = {'CREAR', 'ACTUALIZAR', 'DESACTIVAR', 'CONFIRMAR', 'REPLANIFICAR', 'VALIDAR', 'OBSERVAR'}
 
 async def registrar_auditoria(
     db: AsyncSession,
     accion: str,
     entidad: str,
-    entidad_id: Optional[str] = None,
+    entidad_id: Optional[int] = None,
     valores_antes: Optional[Any] = None,
     valores_despues: Optional[Any] = None,
     usuario_id: Optional[str] = None,
@@ -28,15 +28,13 @@ async def registrar_auditoria(
         accion_normalizada = "ACTUALIZAR"
 
     registro = Auditoria(
-        usuario_id=usuario_id,
+        id_usuario=int(usuario_id) if usuario_id is not None else None,
         accion=accion_normalizada,
         entidad=entidad,
-        entidad_id=str(entidad_id) if entidad_id else None,
-        valores_antes=valores_antes,
-        valores_despues=valores_despues,
-        ip=ip,
-        request_id=request_id,
-        fecha=ahora()
+        id_entidad=int(entidad_id or 0),
+        valor_anterior=valores_antes,
+        valor_nuevo=valores_despues,
+        fecha_hora=ahora()
     )
     db.add(registro)
     await db.flush()

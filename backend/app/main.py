@@ -27,10 +27,10 @@ configurar_logging()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Inicialización de tablas y datos semilla al arrancar
+    # El esquema se gestiona mediante la migración SQL versionada.
     logger.info("Iniciando SIPRD Backend y verificando base de datos...")
     await inicializar_bd()
-    logger.info("Base de datos sincronizada y datos semilla listos.")
+    logger.info("Esquema de base de datos verificado.")
     yield
     # Limpieza al cerrar
     await engine.dispose()

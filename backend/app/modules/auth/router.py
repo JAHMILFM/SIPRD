@@ -11,7 +11,7 @@ from backend.app.core.seguridad import (
 from backend.app.core.errores import ErrorNoAutorizado, ErrorDominio
 from backend.app.core.auditoria import registrar_auditoria
 from backend.app.core.tiempo import ahora
-from backend.app.models import Usuario, TokenRefresco
+from backend.app.models import Usuario
 
 router = APIRouter(prefix="/auth", tags=["Autenticación"])
 
@@ -44,9 +44,6 @@ async def login(req: LoginRequest, response: Response, request: Request, db: Asy
             status_code=status.HTTP_403_FORBIDDEN
         )
 
-    # Actualizar último acceso
-    user.ultimo_acceso = ahora()
-    
     # Generar tokens
     datos_token = {
         "sub": user.id,
@@ -57,14 +54,6 @@ async def login(req: LoginRequest, response: Response, request: Request, db: Asy
     }
     access_token = crear_access_token(datos_token)
     refresh_token = crear_refresh_token({"sub": user.id})
-
-    # Guardar token de refresco
-    t_ref = TokenRefresco(
-        usuario_id=user.id,
-        hash_token=refresh_token[-32:], # Almacena hash parcial
-        expira_en=ahora()
-    )
-    db.add(t_ref)
 
     # Registrar auditoría de login
     ip_cliente = request.client.host if request.client else None

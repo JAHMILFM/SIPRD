@@ -60,3 +60,4 @@ venv/
 *.db
 *.sqlite3
 
+.neon
