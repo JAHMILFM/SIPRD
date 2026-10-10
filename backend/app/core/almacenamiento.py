@@ -4,39 +4,20 @@ from fastapi import UploadFile
 from backend.app.core.config import settings
 from backend.app.core.errores import ErrorDominio
 
-TIPOS_PERMITIDOS = {"image/jpeg", "image/png", "image/webp", "application/pdf"}
-TAMANO_MAXIMO_BYTES = 5 * 1024 * 1024  # 5 MB
+TAMANO_MAXIMO_BYTES=5*1024*1024
 
-async def guardar_archivo(archivo: UploadFile, subcarpeta: str = "general") -> dict:
-    """Valida y almacena un archivo de evidencia o comprobante."""
-    if archivo.content_type not in TIPOS_PERMITIDOS:
-        raise ErrorDominio(
-            codigo="FORMATO_INVALIDO",
-            mensaje=f"Formato no permitido: {archivo.content_type}. Solo se aceptan JPEG, PNG, WebP o PDF."
-        )
-    
-    contenido = await archivo.read()
-    tamano = len(contenido)
-    if tamano > TAMANO_MAXIMO_BYTES:
-        raise ErrorDominio(
-            codigo="ARCHIVO_MUY_PESADO",
-            mensaje="El archivo supera el tamaño máximo permitido de 5 MB."
-        )
-    
-    destino_dir = os.path.join(settings.UPLOAD_DIR, subcarpeta)
-    os.makedirs(destino_dir, exist_ok=True)
-    
-    extension = archivo.filename.split(".")[-1] if "." in archivo.filename else "bin"
-    nombre_seguro = f"{uuid.uuid4().hex}.{extension}"
-    ruta_completa = os.path.join(destino_dir, nombre_seguro)
-    
-    with open(ruta_completa, "wb") as f:
-        f.write(contenido)
-        
-    clave_archivo = f"{subcarpeta}/{nombre_seguro}"
-    return {
-        "clave_archivo": clave_archivo,
-        "tamano_bytes": tamano,
-        "tipo_mime": archivo.content_type,
-        "nombre_original": archivo.filename
-    }
+async def guardar_archivo(archivo:UploadFile,subcarpeta="general",solo_imagen=False):
+    contenido=await archivo.read(TAMANO_MAXIMO_BYTES+1)
+    if len(contenido)>TAMANO_MAXIMO_BYTES:
+        raise ErrorDominio("ARCHIVO_MUY_PESADO","El archivo supera los 5 MB")
+    mime=None;extension=None
+    if contenido.startswith(b"\x89PNG\r\n\x1a\n") and len(contenido)>=24:mime,extension="image/png","png"
+    elif contenido.startswith(b"\xff\xd8\xff") and contenido.endswith(b"\xff\xd9"):mime,extension="image/jpeg","jpg"
+    elif contenido[:4]==b"RIFF" and contenido[8:12]==b"WEBP":mime,extension="image/webp","webp"
+    elif contenido.startswith(b"%PDF-") and b"%%EOF" in contenido[-1024:]:mime,extension="application/pdf","pdf"
+    if not mime or (solo_imagen and not mime.startswith("image/")) or mime!=archivo.content_type:
+        raise ErrorDominio("FORMATO_INVALIDO","Adjunta una imagen JPEG, PNG o WebP válida" if solo_imagen else "Adjunta una imagen o PDF válido; el contenido debe corresponder al formato declarado")
+    destino=os.path.join(settings.UPLOAD_DIR,subcarpeta);os.makedirs(destino,exist_ok=True)
+    clave=f"{subcarpeta}/{uuid.uuid4().hex}.{extension}"
+    with open(os.path.join(settings.UPLOAD_DIR,clave),"wb") as f:f.write(contenido)
+    return dict(clave_archivo=clave,tamano_bytes=len(contenido),tipo_mime=mime,nombre_original=os.path.basename(archivo.filename or f"archivo.{extension}"))

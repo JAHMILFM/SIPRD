@@ -45,7 +45,7 @@ def prefiltrar_pedidos(
             continue
 
         # 2. Validación de día disponible
-        if dia_semana is not None and p.dias_permitidos:
+        if dia_semana is not None and p.dias_permitidos is not None:
             if dia_semana not in p.dias_permitidos:
                 dias_nombres = {1: "Lunes", 2: "Martes", 3: "Miércoles", 4: "Jueves", 5: "Viernes", 6: "Sábado", 0: "Domingo"}
                 dias_str = ", ".join([dias_nombres.get(d, str(d)) for d in p.dias_permitidos])
@@ -56,6 +56,9 @@ def prefiltrar_pedidos(
                 ))
                 continue
 
+        if p.ventana_inicio and p.ventana_fin and p.ventana_inicio >= p.ventana_fin:
+            no_asignados.append(NoAsignadoResultado(pedido_id=p.id,codigo="VENTANA_INCOMPATIBLE",motivo="Las reglas vigentes no tienen un intervalo de recepción común"))
+            continue
         # 3. Validación de peso y volumen unitario contra la flota
         if p.peso_kg > max_peso_flota:
             no_asignados.append(NoAsignadoResultado(

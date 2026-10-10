@@ -49,12 +49,15 @@ export default function Login() {
 
     if (timerRef.current) clearTimeout(timerRef.current)
     timerRef.current = setTimeout(async () => {
-      const ok = await login(usuario.trim(), clave)
-      if (isMountedRef.current) {
-        if (!ok) {
+      try {
+        const ok = await login(usuario.trim(), clave)
+        if (isMountedRef.current && !ok) {
           setError('Usuario o contraseña no válidos. Verifica tus credenciales de acceso.')
         }
-        setCargando(false)
+      } catch (error) {
+        if (isMountedRef.current) setError(error.message)
+      } finally {
+        if (isMountedRef.current) setCargando(false)
       }
     }, 300)
   }

@@ -64,3 +64,19 @@ describe('Motor de Planificación y Heurística (planner.js)', () => {
     assert.ok(resExceso.n <= VEHICULOS.length)
   })
 })
+
+
+describe('Vista previa con datos reales de PostgreSQL', () => {
+  it('mantiene los metros cúbicos recibidos sin multiplicarlos', () => {
+    const pedido = { id: 'real', peso_kg: 100, volumen_m3: 2, zona: 'Sur', ventana: 'Todo el día' }
+    const flota = [{ id: 1, pesoMax: 1, volMax: 3 }]
+    const plan = planificar([pedido], 1, flota)
+    assert.equal(plan.sinAsignar.length, 0)
+    assert.equal(plan.rutas[0].vol, 2)
+  })
+  it('un cliente sin días disponibles queda fuera de la vista previa', () => {
+    const resultado = separarReprogramados([{ id: 1, dias: [] }], 6)
+    assert.equal(resultado.planificables.length, 0)
+    assert.equal(resultado.reprogramados[0].mueveA, 'Sin día disponible')
+  })
+})

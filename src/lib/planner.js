@@ -31,9 +31,9 @@ export function separarReprogramados(pedidos = [], dia = DIA_SEMANA) {
   const planificables = []
   const reprogramados = []
   for (const p of pedidos) {
-    if (Array.isArray(p.dias) && p.dias.length > 0 && !p.dias.includes(dia)) {
+    if (Array.isArray(p.dias) && !p.dias.includes(dia)) {
       const siguiente = proximoDiaHabil(p.dias, dia)
-      reprogramados.push({ ...p, motivo: `No atiende ${NOMBRE_DIA[dia]}`, mueveA: NOMBRE_DIA[siguiente] })
+      reprogramados.push({ ...p, motivo: `No atiende ${NOMBRE_DIA[dia]}`, mueveA: p.dias.length ? NOMBRE_DIA[siguiente] : 'Sin día disponible' })
     } else {
       planificables.push(p)
     }
@@ -62,13 +62,13 @@ function costoPedido(p) {
  * Heurística: pedidos ordenados por carga descendente, cada uno al vehículo con
  * menor jornada acumulada que aún tenga capacidad de peso y volumen.
  */
-export function planificar(pedidos = [], n = 1) {
+export function planificar(pedidos = [], n = 1, vehiculos = VEHICULOS) {
   // TODO BACKEND: POST /api/planes/optimizar
   // Esta función entera se reemplazará por una llamada a la API en producción.
   // La UI seguirá consumiendo el mismo formato de respuesta.
 
-  const safeN = Math.max(1, Math.min(n, VEHICULOS.length))
-  const flota = VEHICULOS.slice(0, safeN)
+  const safeN = Math.max(1, Math.min(n, vehiculos.length))
+  const flota = vehiculos.slice(0, safeN)
   const rutas = flota.map((v, i) => ({
     id: `R${i + 1}`,
     id_ruta: i + 1,
@@ -97,7 +97,7 @@ export function planificar(pedidos = [], n = 1) {
   for (const p of orden) {
     const c = costoPedido(p)
     const pPesoT = (p.peso_kg ?? p.peso ?? 0) / 1000
-    const pVolM3 = (p.volumen_m3 ?? p.vol ?? 0) * 3.2
+    const pVolM3 = (p.volumen_m3 ?? p.vol ?? 0)
 
     const aptas = rutas
       .filter((r) => {

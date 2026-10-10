@@ -1,202 +1,59 @@
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Query
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
+from fastapi.responses import FileResponse
 from sqlalchemy import select
-from typing import Optional, List
+from sqlalchemy.ext.asyncio import AsyncSession
+from pathlib import Path
 from backend.app.core.db import get_db
-from backend.app.core.seguridad import require_roles, obtener_usuario_actual
-from backend.app.core.errores import ErrorNoEncontrado, ErrorAccesoDenegado, ErrorReglaNegocio
+from backend.app.core.seguridad import require_roles
+from backend.app.core.operacion import parada_autorizada
 from backend.app.core.almacenamiento import guardar_archivo
 from backend.app.core.auditoria import registrar_auditoria
+from backend.app.core.config import settings
 from backend.app.core.tiempo import ahora
-from backend.app.models import (
-    Ruta, Parada, Pedido, Cliente, Vehiculo, EvidenciaEntrega,
-    Incidencia, PlanificacionVersion, Planificacion
-)
+from backend.app.models import EvidenciaEntrega, Pedido, Incidencia
 
-router = APIRouter(prefix="/reparto", tags=["Módulo Móvil de Reparto"])
+router=APIRouter(prefix='/reparto',tags=['Reparto'])
+repartidor=require_roles(['REPARTIDOR'])
 
-@router.get("/mi-ruta")
-async def obtener_mi_ruta(
-    fecha: Optional[str] = Query(None),
-    db: AsyncSession = Depends(get_db),
-    usuario: dict = Depends(require_roles(["REPARTIDOR", "ASISTENTE", "JEFE", "ADMINISTRADOR"]))
-):
-    """
-    Devuelve la ruta asignada al repartidor autenticado para la fecha solicitada (RF-REP-01).
-    Solo expone rutas en versiones CONFIRMADAS.
-    """
-    user_id = usuario["sub"]
-    
-    query = (
-        select(Ruta, PlanificacionVersion, Planificacion, Vehiculo)
-        .join(PlanificacionVersion, Ruta.version_id == PlanificacionVersion.id)
-        .join(Planificacion, PlanificacionVersion.planificacion_id == Planificacion.id)
-        .join(Vehiculo, Ruta.vehiculo_id == Vehiculo.id)
-        .where(
-            PlanificacionVersion.estado == "CONFIRMADA"
-        )
-    )
+@router.get('/mi-ruta')
+async def mi_ruta(db:AsyncSession=Depends(get_db),u:dict=Depends(repartidor)):
+    from backend.app.datos_web import cargar_datos
+    data=await cargar_datos(db,u)
+    return {'rutas':data['rutas']}
 
-    # Si es repartidor, solo puede ver SU ruta (prevención de IDOR)
-    if usuario.get("rol", "").upper() == "REPARTIDOR":
-        query = query.where(Ruta.repartidor_id == user_id)
-        
-    if fecha:
-        query = query.where(Planificacion.fecha == fecha)
+@router.post('/paradas/{id}/evidencias',status_code=201)
+async def entregar(id:int,archivo:UploadFile=File(...),db:AsyncSession=Depends(get_db),u:dict=Depends(repartidor)):
+    parada,ruta=await parada_autorizada(db,id,u)
+    pedido=await db.get(Pedido,parada.id_pedido)
+    if pedido.estado in ['CANCELADO','CERRADO']:raise HTTPException(409,'El pedido está finalizado')
+    info=await guardar_archivo(archivo,'evidencias',solo_imagen=True)
+    e=EvidenciaEntrega(parada_id=id,tipo='FOTO',nombre_archivo=info['nombre_original'],tipo_mime=info['tipo_mime'],
+        tamanio_bytes=info['tamano_bytes'],ruta_almacenamiento=info['clave_archivo'])
+    db.add(e);await db.flush()
+    parada.estado='ATENDIDA';parada.hora_llegada_real=ahora();pedido.estado='ENTREGADO'
+    await registrar_auditoria(db,'ACTUALIZAR','parada',id,usuario_id=u['sub'],valores_despues={'estado':'ATENDIDA','evidencia_id':e.id})
+    return {'mensaje':'Entrega y fotografía registradas','evidencia_id':e.id}
 
-    result = await db.execute(query.order_by(Planificacion.creado_en.desc()))
-    fila = result.first()
-    if not fila:
-        return {"mensaje": "No tiene rutas activas confirmadas asignadas para esta fecha"}
+@router.get('/paradas/{id}/evidencias')
+async def evidencias(id:int,db:AsyncSession=Depends(get_db),u:dict=Depends(require_roles(['REPARTIDOR','ASISTENTE','JEFE']))):
+    await parada_autorizada(db,id,u)
+    return [dict(id=e.id,nombre=e.nombre_archivo,subido_en=e.subido_en) for e in (await db.scalars(select(EvidenciaEntrega).where(EvidenciaEntrega.parada_id==id))).all()]
 
-    ruta, version, plan, vehiculo = fila
+@router.get('/paradas/{id}/evidencias/{evidencia_id}/archivo')
+async def archivo_evidencia(id:int,evidencia_id:str,db:AsyncSession=Depends(get_db),u:dict=Depends(require_roles(['REPARTIDOR','ASISTENTE','JEFE']))):
+    await parada_autorizada(db,id,u)
+    e=await db.get(EvidenciaEntrega,evidencia_id)
+    if not e or e.parada_id!=id:raise HTTPException(404,'Evidencia no encontrada')
+    path=Path(settings.UPLOAD_DIR)/e.ruta_almacenamiento
+    if not path.is_file():raise HTTPException(404,'Archivo no encontrado')
+    return FileResponse(path,media_type=e.tipo_mime,filename=e.nombre_archivo)
 
-    # Obtener paradas
-    p_q = await db.execute(
-        select(Parada, Pedido, Cliente)
-        .join(Pedido, Parada.pedido_id == Pedido.id)
-        .join(Cliente, Pedido.cliente_id == Cliente.id)
-        .where(Parada.ruta_id == ruta.id)
-        .order_by(Parada.secuencia)
-    )
-    paradas_filas = p_q.all()
-
-    paradas_formato = [
-        {
-            "id": par.id,
-            "secuencia": par.secuencia,
-            "pedido_id": ped.id,
-            "codigo_externo": ped.codigo_externo,
-            "cliente": cli.nombre,
-            "direccion": cli.direccion,
-            "distrito": cli.distrito,
-            "lat": cli.lat,
-            "lon": cli.lon,
-            "importe_total": ped.importe_total,
-            "peso_kg": ped.peso_kg,
-            "volumen_m3": ped.volumen_m3,
-            "llegada": par.llegada,
-            "salida": par.salida,
-            "estado": par.estado,
-            "estado_pedido": ped.estado
-        }
-        for par, ped, cli in paradas_filas
-    ]
-
-    return {
-        "ruta_id": ruta.id,
-        "fecha": plan.fecha,
-        "vehiculo": {
-            "placa": vehiculo.placa,
-            "marca": vehiculo.marca,
-            "modelo": vehiculo.modelo
-        },
-        "salida": ruta.salida,
-        "regreso": ruta.regreso,
-        "distancia_km": ruta.distancia_km,
-        "duracion_min": ruta.duracion_min,
-        "paradas": paradas_formato
-    }
-
-@router.post("/paradas/{id}/evidencias", status_code=status.HTTP_201_CREATED)
-async def registrar_evidencia_entrega(
-    id: str,
-    archivo: UploadFile = File(...),
-    db: AsyncSession = Depends(get_db),
-    usuario: dict = Depends(require_roles(["REPARTIDOR", "ASISTENTE", "JEFE", "ADMINISTRADOR"]))
-):
-    """
-    Sube foto de evidencia de entrega (RF-REP-02).
-    Marca la parada como COMPLETADA y el pedido como ENTREGADO.
-    """
-    parada = await db.get(Parada, id)
-    if not parada:
-        raise ErrorNoEncontrado("Parada", id)
-
-    # Validar propiedad de la ruta si es repartidor
-    if usuario.get("rol", "").upper() == "REPARTIDOR":
-        ruta = await db.get(Ruta, parada.ruta_id)
-        if not ruta or ruta.repartidor_id != usuario["sub"]:
-            raise ErrorAccesoDenegado("No tiene autorización para modificar esta parada.")
-
-    # Guardar archivo validando tamaño y tipo
-    info_archivo = await guardar_archivo(archivo, subcarpeta="evidencias")
-
-    evidencia = EvidenciaEntrega(
-        parada_id=parada.id,
-        pedido_id=parada.pedido_id,
-        clave_archivo=info_archivo["clave_archivo"],
-        tipo_mime=info_archivo["tipo_mime"],
-        tamano_bytes=info_archivo["tamano_bytes"],
-        subida_por=usuario["sub"]
-    )
-    db.add(evidencia)
-
-    # Actualizar estado de parada y pedido
-    parada.estado = "COMPLETADA"
-    parada.completada_en = ahora()
-
-    pedido = await db.get(Pedido, parada.pedido_id)
-    if pedido:
-        pedido.estado = "ENTREGADO"
-
-    await registrar_auditoria(
-        db=db,
-        accion="ENTREGA_COMPLETADA",
-        entidad="parada",
-        entidad_id=parada.id,
-        valores_despues={"estado": "COMPLETADA", "pedido_estado": "ENTREGADO"},
-        usuario_id=usuario["sub"]
-    )
-    await db.commit()
-
-    return {
-        "mensaje": "Evidencia registrada y entrega completada con éxito",
-        "evidencia_id": evidencia.id,
-        "clave_archivo": evidencia.clave_archivo
-    }
-
-@router.post("/paradas/{id}/incidencias", status_code=status.HTTP_201_CREATED)
-async def registrar_incidencia_parada(
-    id: str,
-    tipo: str = Form(...),
-    descripcion: str = Form(...),
-    marcar_fallida: bool = Form(True),
-    db: AsyncSession = Depends(get_db),
-    usuario: dict = Depends(require_roles(["REPARTIDOR", "ASISTENTE", "JEFE", "ADMINISTRADOR"]))
-):
-    """
-    Registra incidencia en ruta/parada (RF-INC-01).
-    Puede marcar la parada como FALLIDA.
-    """
-    parada = await db.get(Parada, id)
-    if not parada:
-        raise ErrorNoEncontrado("Parada", id)
-
-    incidencia = Incidencia(
-        ruta_id=parada.ruta_id,
-        parada_id=parada.id,
-        tipo=tipo.upper(),
-        descripcion=descripcion,
-        estado="ABIERTA",
-        registrada_por=usuario["sub"]
-    )
-    db.add(incidencia)
-
-    if marcar_fallida:
-        parada.estado = "FALLIDA"
-        pedido = await db.get(Pedido, parada.pedido_id)
-        if pedido:
-            pedido.estado = "FALLIDO"
-
-    await registrar_auditoria(
-        db=db,
-        accion="REGISTRAR_INCIDENCIA",
-        entidad="incidencia",
-        entidad_id=incidencia.id,
-        valores_despues={"tipo": tipo, "parada_id": parada.id},
-        usuario_id=usuario["sub"]
-    )
-    await db.commit()
-
-    return {"mensaje": "Incidencia registrada exitosamente", "incidencia_id": incidencia.id}
+@router.post('/paradas/{id}/incidencias',status_code=201)
+async def incidencia(id:int,tipo:str=Form(...),descripcion:str=Form(...),db:AsyncSession=Depends(get_db),u:dict=Depends(repartidor)):
+    parada,ruta=await parada_autorizada(db,id,u)
+    tipos=['CLIENTE_CERRADO','CLIENTE_NO_RECIBE','DIRECCION_INCORRECTA','PEDIDO_RECHAZADO','VEHICULO_RETRASADO','OTRO']
+    if tipo not in tipos or not descripcion.strip() or len(descripcion)>1000:raise HTTPException(422,'Tipo o descripción de incidencia inválidos')
+    inc=Incidencia(id_parada=id,tipo=tipo,descripcion=descripcion.strip(),estado='ABIERTA',registrada_por=int(u['sub']))
+    db.add(inc);await db.flush()
+    await registrar_auditoria(db,'CREAR','incidencia',inc.id,usuario_id=u['sub'],valores_despues={'parada_id':id,'tipo':tipo,'descripcion':descripcion})
+    return {'mensaje':'Incidencia registrada','incidencia_id':inc.id}

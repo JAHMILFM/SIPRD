@@ -1,10 +1,10 @@
-import { useState, useRef, useEffect, useMemo } from 'react'
-import { RUTAS_ACTIVAS } from '../data/mockRutas'
+import { useState } from 'react'
+import { useDatos } from '../context/DatosContext'
 import { useAuth } from '../context/AuthContext'
-import { useAudit } from '../context/AuditContext'
-import { useToast } from '../context/ToastContext'
 import RouteMap from './RouteMap'
 import ErrorBoundary from './ErrorBoundary'
+import Modal from './common/Modal'
+import { AccionesEntregaPanel } from './Operaciones'
 
 /**
  * Módulo Rutas — gestión en vivo.
@@ -40,150 +40,21 @@ function chipEstado(estado, bloqueado) {
 }
 
 export default function Rutas() {
+  const { rutas: RUTAS_ACTIVAS, incidencias, recargar } = useDatos()
   const { usuario } = useAuth()
-  const { log }     = useAudit()
-  const { toast }   = useToast()
 
-  const recalcTimerRef = useRef(null)
-
-  useEffect(() => {
-    return () => {
-      if (recalcTimerRef.current) clearTimeout(recalcTimerRef.current)
-    }
-  }, [])
-
-  const [rutas, setRutas] = useState(() =>
-    RUTAS_ACTIVAS.map(r => ({ ...r, paradas: r.paradas.map(p => ({ ...p })) }))
-  )
-  const [rutaActiva, setRutaActiva] = useState(() => rutas[0]?.id ?? 'R1')
-  const [guardado, setGuardado]     = useState(false)
-  const [filtroEstado, setFiltroEstado] = useState('todos') // 'todos' | 'pendiente' | 'en_camino' | 'entregado'
-
+  const [fecha, setFecha] = useState(RUTAS_ACTIVAS[0]?.fecha_ruta || '2026-10-10')
+  const rutas = RUTAS_ACTIVAS.filter(r => r.fecha_ruta === fecha)
+  const [rutaActiva, setRutaActiva] = useState(RUTAS_ACTIVAS[0]?.id || '')
+  const [filtroEstado, setFiltroEstado] = useState('todos')
+  const [paradaId, setParadaId] = useState(null)
   const ruta = rutas.find(r => r.id === rutaActiva) ?? rutas[0]
-
-  // ── helpers con soporte de Deshacer (Heurística #3) ───────────
-  const mutarRuta = (fn) => {
-    setRutas(prev =>
-      prev.map(r => r.id === rutaActiva ? { ...r, paradas: fn(r.paradas) } : r)
-    )
-    setGuardado(false)
-  }
-
-  const subir = (paradaId) => {
-    const estadoPrevio = [...ruta.paradas]
-    let logP = null
-    let oldPos = 0
-    let newPos = 0
-
-    mutarRuta(ps => {
-      const idx = ps.findIndex(p => p.id === paradaId)
-      // No mover si es primera o si la parada anterior ya fue entregada
-      if (idx <= 0 || esEntregada(ps[idx - 1])) return ps
-      logP = ps[idx]
-      oldPos = idx + 1
-      newPos = idx
-      const a = [...ps];
-      [a[idx - 1], a[idx]] = [a[idx], a[idx - 1]]
-      return a.map((p, i) => ({ ...p, orden: i + 1, secuencia: i + 1 }))
-    })
-
-    if (logP) {
-      log(usuario, 'Rutas', 'Reordenó parada (subió)', `${logP.cliente} · ${rutaActiva}`, { entidad: 'paradas_ruta', id_entidad: logP.id_parada ?? oldPos, accion_db: 'ACTUALIZAR' })
-      toast.info(`Parada #${oldPos} (${logP.cliente}) movida a posición #${newPos}`, {
-        duration: 5000,
-        action: {
-          label: 'Deshacer',
-          onClick: () => {
-            mutarRuta(() => estadoPrevio)
-            toast.success('Reordenamiento revertido.')
-          }
-        }
-      })
-    }
-  }
-
-  const bajar = (paradaId) => {
-    const estadoPrevio = [...ruta.paradas]
-    let logP = null
-    let oldPos = 0
-    let newPos = 0
-
-    mutarRuta(ps => {
-      const idx = ps.findIndex(p => p.id === paradaId)
-      // No mover si es la última o si la parada posterior está bloqueada/entregada
-      if (idx < 0 || idx >= ps.length - 1 || esEntregada(ps[idx + 1])) return ps
-      logP = ps[idx]
-      oldPos = idx + 1
-      newPos = idx + 2
-      const a = [...ps];
-      [a[idx], a[idx + 1]] = [a[idx + 1], a[idx]]
-      return a.map((p, i) => ({ ...p, orden: i + 1, secuencia: i + 1 }))
-    })
-
-    if (logP) {
-      log(usuario, 'Rutas', 'Reordenó parada (bajó)', `${logP.cliente} · ${rutaActiva}`, { entidad: 'paradas_ruta', id_entidad: logP.id_parada ?? oldPos, accion_db: 'ACTUALIZAR' })
-      toast.info(`Parada #${oldPos} (${logP.cliente}) movida a posición #${newPos}`, {
-        duration: 5000,
-        action: {
-          label: 'Deshacer',
-          onClick: () => {
-            mutarRuta(() => estadoPrevio)
-            toast.success('Reordenamiento revertido.')
-          }
-        }
-      })
-    }
-  }
-
-  const toggleBloqueo = (id) => {
-    let paradaMod = null
-    let bloqueadoPrev = false
-
-    mutarRuta(ps => ps.map(p => {
-      if (p.id === id) {
-        paradaMod = p
-        bloqueadoPrev = p.bloqueado
-        return { ...p, bloqueado: !p.bloqueado }
-      }
-      return p
-    }))
-
-    if (paradaMod) {
-      const nuevoEstado = !bloqueadoPrev
-      log(usuario, 'Rutas', nuevoEstado ? 'Bloqueó parada' : 'Desbloqueó parada', `${paradaMod.cliente} · ${rutaActiva}`)
-      toast.warning(
-        nuevoEstado
-          ? `Parada de ${paradaMod.cliente} bloqueada para el repartidor.`
-          : `Parada de ${paradaMod.cliente} desbloqueada.`,
-        {
-          duration: 5000,
-          action: {
-            label: 'Deshacer',
-            onClick: () => {
-              mutarRuta(ps => ps.map(p => p.id === id ? { ...p, bloqueado: bloqueadoPrev } : p))
-              toast.info('Cambio de bloqueo revertido.')
-            }
-          }
-        }
-      )
-    }
-  }
-
-  const guardar = () => {
-    setGuardado(true)
-    log(usuario, 'Rutas', 'Guardó cambios de ruta', `Ruta ${rutaActiva} sincronizada con App de Distribución`)
-    toast.success(`Ruta ${rutaActiva} sincronizada con éxito con la App de los repartidores.`)
-  }
-
-  const recalcularPendientes = () => {
-    toast.info('Recalculando secuencia óptima para las paradas pendientes…', { duration: 1500 })
-    if (recalcTimerRef.current) clearTimeout(recalcTimerRef.current)
-    recalcTimerRef.current = setTimeout(() => {
-      toast.success('Secuencia de paradas pendientes optimizada respetando las entregas realizadas.')
-    }, 1500)
-  }
+  const parada = ruta?.paradas.find(p => p.id === paradaId)
+  const selectorFecha = <div className="card ch"><label style={{fontSize:12,fontWeight:600}}>Fecha de jornada <input type="date" value={fecha} onChange={e => setFecha(e.target.value)} style={{marginLeft:8}} /></label></div>
 
   // ── Métricas y filtrado (Soporte dual interfaz y esquema siprd) ──
+  if (!ruta) return <>{selectorFecha}<div className="card ch"><p>No hay rutas asignadas disponibles para esta fecha.</p></div></>
+
   const ent = ruta.paradas.filter(esEntregada).length
   const enc = ruta.paradas.filter(esEnCamino).length
   const pen = ruta.paradas.filter(esPendiente).length
@@ -199,13 +70,17 @@ export default function Rutas() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {selectorFecha}
+      <Modal isOpen={!!parada} onClose={() => setParadaId(null)} title={`Entrega · ${parada?.cliente || ''}`} maxWidth={680}>{parada && <AccionesEntregaPanel key={parada.id} parada={parada} />}</Modal>
+
+      {incidencias.filter(i => i.id_ruta === ruta.id_ruta).length > 0 && <div className="card"><h3>Incidencias de la ruta</h3>{incidencias.filter(i => i.id_ruta === ruta.id_ruta).map(i => <p key={i.id}><b>{i.tipo} · {i.estado}</b> — {i.descripcion}</p>)}</div>}
 
       {/* Selector de rutas con affordances visuales claros */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
         {rutas.map(r => {
           const entR  = r.paradas.filter(esEntregada).length
           const totR  = r.paradas.length
-          const pctR  = Math.round((entR / totR) * 100)
+          const pctR  = totR ? Math.round((entR / totR) * 100) : 0
           const activ = r.id === rutaActiva
           return (
             <button
@@ -248,17 +123,9 @@ export default function Rutas() {
               {ruta.vehiculo.conductor}
               <span style={{ fontWeight: 400, color: '#64748b', fontSize: 12 }}>— {ruta.vehiculo.placa} {ruta.vehiculo.marca}</span>
             </h3>
-            <p>Salida: {ruta.horaInicio} · {ruta.paradas.length} paradas · Reordena o bloquea paradas; los cambios se sincronizan en vivo.</p>
+            <p>Salida: {ruta.horaInicio} · {ruta.paradas.length} paradas · Consulta el avance de las entregas y sus incidencias.</p>
           </div>
-          <div className="btns">
-            <button
-              type="button"
-              className={`btn ${guardado ? 'btn-secondary' : 'btn-primary'}`}
-              onClick={guardar}
-            >
-              {guardado ? '✓ Cambios Sincronizados' : '💾 Guardar y Sincronizar'}
-            </button>
-          </div>
+          <div className="btns"><button type="button" className="btn out" onClick={recargar}>↻ Actualizar</button></div>
         </div>
 
         {/* KPIs de la ruta */}
@@ -303,7 +170,7 @@ export default function Rutas() {
                 cursor: 'pointer'
               }}
             >
-              {label} ({k === 'todos' ? ruta.paradas.length : ruta.paradas.filter(p => p.estado === k).length})
+              {label} ({k === 'todos' ? ruta.paradas.length : ruta.paradas.filter(k === 'entregado' ? esEntregada : k === 'en_camino' ? esEnCamino : esPendiente).length})
             </button>
           ))}
         </div>
@@ -326,9 +193,7 @@ export default function Rutas() {
               {paradasVisibles.map((p) => {
                 const bloq = p.bloqueado
                 const inmutable = p.estado === 'entregado'
-                const realIdx = ruta.paradas.findIndex(item => item.id === p.id)
-                const canSubir = realIdx > 0 && ruta.paradas[realIdx - 1]?.estado !== 'entregado'
-                const canBajar = realIdx >= 0 && realIdx < ruta.paradas.length - 1 && ruta.paradas[realIdx + 1]?.estado !== 'entregado'
+
 
                 return (
                   <tr key={p.id} style={{ opacity: inmutable ? .65 : 1, background: bloq ? '#fff7f7' : undefined }}>
@@ -347,57 +212,7 @@ export default function Rutas() {
                       {p.horaReal && <span style={{ display: 'block', fontSize: 10, color: '#64748b', marginTop: 2 }}>{p.horaReal}</span>}
                     </td>
                     <td>
-                      {!inmutable && (
-                        <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
-                          <button
-                            type="button"
-                            title={canSubir ? `Mover parada de ${p.cliente} hacia arriba` : 'No se puede subir más'}
-                            aria-label={`Subir parada de ${p.cliente}`}
-                            disabled={!canSubir}
-                            onClick={() => subir(p.id)}
-                            style={{
-                              width: 28, height: 28, borderRadius: 6,
-                              border: '1px solid #cbd5e1', background: '#fff',
-                              fontSize: 13, cursor: canSubir ? 'pointer' : 'not-allowed', display: 'grid', placeItems: 'center'
-                            }}
-                          >
-                            ↑
-                          </button>
-                          <button
-                            type="button"
-                            title={canBajar ? `Mover parada de ${p.cliente} hacia abajo` : 'No se puede bajar más'}
-                            aria-label={`Bajar parada de ${p.cliente}`}
-                            disabled={!canBajar}
-                            onClick={() => bajar(p.id)}
-                            style={{
-                              width: 28, height: 28, borderRadius: 6,
-                              border: '1px solid #cbd5e1', background: '#fff',
-                              fontSize: 13, cursor: canBajar ? 'pointer' : 'not-allowed', display: 'grid', placeItems: 'center'
-                            }}
-                          >
-                            ↓
-                          </button>
-                          <button
-                            type="button"
-                            title={bloq ? `Desbloquear entrega de ${p.cliente}` : `Bloquear entrega de ${p.cliente}`}
-                            aria-label={bloq ? 'Desbloquear parada' : 'Bloquear parada'}
-                            onClick={() => toggleBloqueo(p.id)}
-                            style={{
-                              width: 28, height: 28, borderRadius: 6,
-                              border: `1px solid ${bloq ? '#fca5a5' : '#cbd5e1'}`,
-                              background: bloq ? '#fee2e2' : '#fff',
-                              fontSize: 12, cursor: 'pointer', display: 'grid', placeItems: 'center'
-                            }}
-                          >
-                            {bloq ? '🔓' : '🔒'}
-                          </button>
-                        </div>
-                      )}
-                      {inmutable && (
-                        <span style={{ display: 'block', textAlign: 'center', color: '#64748b', fontSize: 11, fontWeight: 500 }}>
-                          Entregado
-                        </span>
-                      )}
+                      {usuario.rol === 'repartidor' ? <button className="btn out" style={{padding:'4px 10px',fontSize:11}} onClick={() => setParadaId(p.id)}>Entrega / cobro</button> : <span style={{fontSize:11,color:'#64748b'}}>Consulta</span>}
                     </td>
                   </tr>
                 )
@@ -406,18 +221,7 @@ export default function Rutas() {
           </table>
         </div>
 
-        {/* Nota de recálculo */}
-        <div className="foot">
-          <span>El recálculo respeta las paradas ya entregadas · Motor heurístico CVRPTW</span>
-          <button
-            type="button"
-            className="btn btn-primary"
-            style={{ fontSize: 12, padding: '6px 14px' }}
-            onClick={recalcularPendientes}
-          >
-            ↻ Recalcular pendientes
-          </button>
-        </div>
+        <div className="foot"><span>Las entregas, fotografías e incidencias se guardan en el sistema.</span></div>
       </div>
 
       {/* Monitoreo en Mapa Real Leaflet / OpenStreetMap */}

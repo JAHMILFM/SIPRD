@@ -232,3 +232,114 @@ feature/*         ← desarrollo de funcionalidades específicas
 ---
 
 *Alfa Distribuidores S.A. · SIPRD v0.1 · 2026*
+
+
+## Carga de datos integrada con PostgreSQL
+
+La interfaz de Inicio, Algoritmo, Rutas, Cobranzas y Configuración obtiene su información de `GET /api/v1/datos`. Si la API no responde, muestra un error y permite reintentar. El inicio de sesión requiere autenticación real; no sustituye un rechazo del servidor por una cuenta local.
+
+1. Crear una base PostgreSQL vacía o utilizar la configurada en `.env`. Esta instalación utiliza `siprd_grupo`.
+2. Definir `DATABASE_URL=postgresql+asyncpg://USUARIO:CLAVE@127.0.0.1:5432/siprd_grupo` en `.env`. La contraseña incluida en DATABASE_URL debe corresponder a PostgreSQL; los parámetros POSTGRES separados no reemplazan esa contraseña. Codificar caracteres especiales de la contraseña para una URL.
+3. Ejecutar `iniciar_sistema.bat` desde Windows. El backend crea tablas faltantes, aplica las columnas aditivas necesarias y carga la jornada simulada cuando `DATOS_DEMO=true`.
+4. Abrir `http://localhost:5173/` e iniciar sesión. Si había una instancia anterior abierta, cerrarla y volver a ejecutar el iniciador. `SIPRD_API_PORT` configura tanto la API como el proxy del frontend; en este equipo se utiliza 8002 para evitar la instancia anterior de 8000.
+
+La jornada simulada está fechada el 10/10/2026 e incorpora 24 clientes, 32 pedidos (24 en rutas y 8 pendientes), 24 reglas, 3 rutas, 9 cobros, 9 comprobantes PDF claramente identificados como simulados y 3 incidencias. Se conservan los 12 clientes/pedidos/reglas y los 7 vehículos anteriores. Los totales de esta instalación son 36 clientes, 44 pedidos, 36 reglas y 7 vehículos.
+
+El lote utiliza códigos `DEMO-*` y UUID deterministas. Repetir el arranque no duplica la jornada ni restaura valores editados. `DATOS_DEMO=false` impide agregar el lote; no elimina lo ya cargado. Las reglas se desactivan conservando su registro. Los cambios de capacidades/conductor, reglas y contraste de cobros se guardan en la base. Las rutas confirmadas conservan su secuencia.
+
+Las propuestas se generan y guardan como BORRADOR. Asistente y Jefe asignan repartidores desde Planificación y confirman el despacho. Solo las propuestas CONFIRMADAS aparecen en Reparto. Al confirmar, el servidor vuelve a comprobar capacidades, reglas de atención, disponibilidad y asignación; las rutas confirmadas no se editan.
+
+Cuentas de desarrollo existentes: dhuerta / jefe123, lpomalaya / dist123, admin.ti / ti2026, elopez / rep123 y tesoreria / teso123.
+
+Verificación de integración con PostgreSQL, con escrituras dentro de una transacción que se revierte al terminar:
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest backend.tests.test_datos_integracion -v
+```
+
+El respaldo anterior a esta carga está en `.local/backups/siprd_grupo_antes_datos_20261010.backup`. El esquema original conservado en la conexión anterior permanece separado en `siprd_original_20261009`.
+
+
+## Requisitos funcionales: entrega 0.3.0
+
+Se implementaron pantallas y operaciones para 27 de los 31 RF actualizados. Esta entrega deja cuatro requisitos pendientes por decisión del usuario:
+
+| Código | Función pendiente | Motivo de aplazamiento |
+| --- | --- | --- |
+| RF-INT-01 | Importación desde la base corporativa | Falta definir fuente real, estructura y conexión. La carga JSON existente no acredita esta integración. |
+| RF-PLAN-03 | Cambiar manualmente pedido, vehículo o secuencia de una propuesta | Requiere un editor y validación integral de la asignación modificada. |
+| RF-PLAN-05 | Reprogramar/reoptimizar con nuevas versiones | Requiere versionado y conservación de la ejecución de la versión anterior. |
+| RF-COB-06 | Corregir cobros observados | Requiere el flujo de subsanación y nuevo contraste. Adjuntar antes del primer contraste no sustituye este requisito. |
+
+Accesos de los módulos:
+
+- Administrador: Usuarios y Auditoría.
+- Jefe y Asistente: Inicio, Planificación, Rutas, Incidencias y Configuración. Jefe también consulta Auditoría.
+- Repartidor: sus rutas confirmadas, evidencia fotográfica, incidencias y registro de cobros con fotografía del comprobante.
+- Tesorería: bandeja de cobros, comprobantes, contraste CONFORME/OBSERVADO, motivo y referencia manual al movimiento bancario o arqueo, y Excel auténtico `.xlsx`.
+
+El contraste bancario lo realiza Tesorería; no hay conexión automática con un banco. La evidencia de entrega y el comprobante son archivos distintos. La carga verifica tipo, firma de formato y límite de 5 MB. Las consultas/adjuntos de reparto comprueban pertenencia. Los permisos consultan el estado y rol actuales del usuario en la base de datos.
+
+Ejecutar `iniciar_sistema.bat` y recargar el navegador con Ctrl+F5. El iniciador detecta versiones de API anteriores a 0.3.0 y solo detiene el proceso si corresponde al Python y módulo de este proyecto. Si Windows impide identificarlo, cerrar manualmente la terminal del backend anterior y ejecutar nuevamente el iniciador.
+
+Pruebas de los flujos completos, permisos y persistencia, con rollback de escrituras y adjuntos de prueba temporales:
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest discover -s backend/tests -v
+npm test
+npm run build
+```
+
+Los ensayos de API se realizaron contra PostgreSQL y contra una instalación SQLite aislada. La aceptación visual de las nuevas pantallas debe repetirse tras reiniciar la instancia que atiende al navegador. El informe Word anterior conserva los resultados manuales históricos; no se cambió automáticamente a “cumple” por existir código nuevo.
+
+Respaldo anterior a esta entrega: `.local/backups/siprd_antes_rf_20261010.backup`. Las migraciones agregan columnas; no eliminan tablas ni registros existentes.
+
+
+### Conservación del diseño anterior
+
+Se recuperaron las pantallas anteriores de Inicio, Algoritmo, Rutas, Cobranzas, Configuración y Registros, con sus tarjetas, tablas, mapas, pestañas, colores y barra lateral. Los formularios nuevos usan los botones y ventanas del mismo diseño.
+
+- Configuración conserva la edición en tabla y agrega Nuevo vehículo, filtro de reglas por cliente e historial de reglas inactivas.
+- Algoritmo conserva el tanteo, pedidos, mapas y carga por camión. Guardar como borrador genera una propuesta real; Propuestas guardadas abre la consulta, asignación de repartidores y aprobación. La vista previa de flota usa los datos actuales; el resultado del motor se revisa antes de confirmar.
+- Rutas conserva el selector, indicadores, tabla y mapa. El repartidor abre Entrega / cobro desde cada parada para fotos, incidencias y cobros. La fecha permite consultar la jornada asignada.
+- Cobranzas conserva indicadores, filtros y detalle. El contraste solicita referencia de banco/caja y observación. CSV sigue disponible y Excel usa el archivo autenticado del servidor.
+- Usuarios e Incidencias son funciones nuevas que adoptan los estilos de las tarjetas y tablas existentes.
+
+La compilación de producción, seis ensayos de integración con PostgreSQL y 26 pruebas de lógica de JavaScript pasaron. Se comprobó visualmente en el navegador el diseño recuperado y el formulario de registro de vehículo. La instancia anterior del backend que ya estaba abierta debe reiniciarse para la aceptación completa de los nuevos formularios.
+
+
+### Correcciones 0.3.1: incidencias, usuarios y nombres
+
+- Incidencias consulta la ruta con un JOIN explícito, evitando la carga diferida que causaba `MissingGreenlet` / HTTP 500. Se verificaron consulta general, filtro por ruta y actualización de estado.
+- Registros muestra nombre completo, usuario de acceso, correo y rol de las cuentas existentes. El servidor une auditoría con usuarios; las filas del sistema se identifican como Sistema.
+- Usuarios tiene una entrada propia en el menú del administrador (`admin.ti`), con búsqueda, filtros Activo/Inactivo, edición de datos y rol, desactivación y reactivación. Jefe y Asistente mantienen sus permisos operativos.
+- Los 24 clientes del lote de práctica tienen nombres ficticios. Se actualizaron sus nombres en PostgreSQL sin crear usuarios ni modificar relaciones con pedidos, rutas y cobros. La actualización respeta nombres personalizados e incluye respaldo en `.local/backups/clientes_nombres_20261010.json`.
+
+Verificación: compilación de producción, 26 pruebas JavaScript y siete ensayos de integración con PostgreSQL. El servidor previamente abierto respondía con versión 0.2.0; ejecutar `iniciar_sistema.bat` desde Windows para reiniciarlo con 0.3.1 y actualizar el navegador con Ctrl+F5. El entorno del agente no tiene acceso a los procesos de Windows del servidor anterior.
+
+
+### Ampliación 0.3.2: funciones pendientes y accesos visibles
+
+Esta entrega reemplaza los aplazamientos de RF-PLAN-03 y RF-COB-06 y agrega RF-PLAN-05 para reoptimización previa al inicio de la jornada. RF-INT-01 sigue pendiente de identificar la fuente corporativa y su estructura; leer los pedidos ya cargados en PostgreSQL no acredita su importación.
+
+| Función | Acceso y ubicación |
+| --- | --- |
+| Usuarios | Entrada propia del menú para Jefe y Administrador. Edición de nombres, documento, correo, usuario, contraseña opcional, rol y estado; consulta de permisos por rol. Jefe administra cuentas operativas; Administración protege la cuenta administradora. Nadie puede desactivar su propia cuenta ni cambiar su propio rol. |
+| Cobranzas | Visible para Jefe y Administrador: consulta, comprobantes y exportación. Tesorería conserva el contraste CONFORME/OBSERVADO, observaciones y referencia de banco/caja. |
+| Incidencias | Tarjetas de estados, búsqueda por pedido/cliente/descripción, filtros, tabla y detalle con seguimiento. Conserva los componentes y estilos del diseño existente. |
+| RF-PLAN-03 | Algoritmo → Propuestas guardadas → Editar asignaciones y secuencia. Cambia pedidos entre rutas, vehículos, repartidores y orden de visitas, incluyendo pedidos sin asignar. Valida toda la propuesta antes de guardarla. Solo se editan borradores. |
+| RF-PLAN-05 | Propuestas guardadas → Crear versión de reoptimización. Motivo y flota, historial consultable y nueva aprobación. La versión anterior permanece hasta confirmar la nueva y luego queda SUPERADA. Una jornada iniciada bloquea la reoptimización para conservar entregas, incidencias y evidencias. La reoptimización durante ejecución requiere un desarrollo adicional. |
+| RF-COB-06 | Repartidor → Rutas → Entrega / cobro → Subsanar cobro observado. Corrige importe, medio y operación, registra respuesta, adjunta un nuevo comprobante y vuelve a Tesorería. Conserva comprobantes previos y auditoría. Un contraste CONFORME resuelve las observaciones pendientes. |
+
+Verificación de esta ampliación: diez ensayos de integración con PostgreSQL (escrituras revertidas al terminar), 26 pruebas JavaScript y compilación de producción. Se verificó visualmente el menú del Jefe y el diseño de Incidencias. Se prueban permisos del Jefe y protección de Administración, edición de propuesta y cambio de vehículo, versiones y conservación del historial, bloqueo tras iniciar la entrega y corrección de cobros con comprobante nuevo y segundo contraste.
+
+**Activación:** ejecutar `iniciar_sistema.bat` desde Windows y actualizar el navegador con Ctrl+F5. El iniciador espera API 0.3.2 y reemplaza una instancia anterior solo tras comprobar que es el proceso de este proyecto. Si no puede identificarla, cerrar la terminal del backend anterior y ejecutar nuevamente el iniciador. La instancia anterior en 8002 no se pudo reiniciar desde el entorno aislado del agente; las pruebas usan el código actualizado con PostgreSQL. Los resultados del Word anterior siguen siendo históricos y requieren una nueva aceptación manual.
+
+
+### Corrección 0.3.3: permiso del Jefe y cobranzas relacionadas
+
+La API permite a JEFE y ADMINISTRADOR consultar y administrar las cuentas operativas. El Jefe consulta cobranzas y comprobantes; Tesorería contrasta los pagos. Una instancia 0.3.1 ya abierta sigue ejecutando los permisos anteriores: reiniciar con `iniciar_sistema.bat` y actualizar con Ctrl+F5. Usuarios y Cobranzas muestran un aviso específico cuando detectan esa versión anterior, evitando confundir un despliegue pendiente con falta de datos.
+
+Se mejoraron los nueve cobros existentes de la jornada ficticia del 10/10/2026, ligados a pedidos, clientes con nombre, paradas y el repartidor existente. Las notas describen conciliación, cotejo bancario y comprobantes ilegibles. Los números de operaciones digitales y los horarios de Lima son coherentes con las entregas. Los pagos en efectivo no tienen un número bancario inventado. Los pedidos íntegramente conciliados quedan CERRADOS. El número de ruta procede de la parada asociada, no del ID del vehículo. Las referencias internas del lote y el origen SIMULADO se conservan para identificar los datos ficticios; los comprobantes de práctica conservan su identificación y no se presentan como documentos reales.
+
+La actualización solo sustituye etiquetas genéricas originales, respeta notas personalizadas y es idempotente. Se aplicó a PostgreSQL con respaldo `.local/backups/cobranzas_antes_ajuste_20261010_135519.json`; no crea usuarios ni duplica cobros. El iniciador espera versión 0.3.3. El entorno aislado del agente no puede reiniciar los procesos del servidor abierto en Windows.

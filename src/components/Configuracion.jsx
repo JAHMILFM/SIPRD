@@ -1,9 +1,13 @@
-import { useState } from 'react'
-import { VEHICULOS_CONFIG, REGLAS_CLIENTE, DIAS_SEMANA } from '../data/mockRutas'
+import { useState, useEffect } from 'react'
+import { DIAS_SEMANA } from '../data/mockRutas'
+import { useDatos } from '../context/DatosContext'
+import { apiFetch } from '../api/cliente'
 import { useAuth } from '../context/AuthContext'
 import { useAudit } from '../context/AuditContext'
 import { useToast } from '../context/ToastContext'
 import ConfirmDialog from './common/ConfirmDialog'
+import Modal from './common/Modal'
+import { RegistroVehiculoForm } from './Operaciones'
 
 /**
  * Módulo Configuración.
@@ -43,13 +47,13 @@ function VehiculoRow({ v, onSave }) {
     setForm(p => ({ ...p, [k]: val }))
   }
   
-  const guardar = () => {
+  const guardar = async () => {
     const pMax = Number(form.pesoMax) || 1
     const vMax = Number(form.volMax) || 1
     const st = form.estado || (form.activo ? 'DISPONIBLE' : 'INACTIVO')
     const act = st !== 'MANTENIMIENTO' && st !== 'INACTIVO'
 
-    onSave({
+    const guardado = await onSave({
       ...form,
       capacidad_kg: pMax * 1000,
       capacidad_m3: vMax,
@@ -59,7 +63,7 @@ function VehiculoRow({ v, onSave }) {
       activo: act,
       conductor: String(form.conductor || '').trim() || 'Sin conductor asignado',
     })
-    setEdit(false)
+    if (guardado) setEdit(false)
   }
 
   const estadoBadge = (st) => {
@@ -183,11 +187,11 @@ function ReglaRow({ r, onSave, onDelete }) {
     return { ...p, dias: dias.includes(d) ? dias.filter(x => x !== d) : [...dias, d].sort() }
   })
 
-  const guardar = () => {
+  const guardar = async () => {
     const clienteNombre = form.cliente?.trim() || 'Cliente Sin Nombre'
     const [hIni, hFin] = (form.ventana && form.ventana.includes('–')) ? form.ventana.split('–') : [null, null]
 
-    onSave({
+    const guardado = await onSave({
       ...form,
       cliente: clienteNombre,
       dias: sinRestr ? null : form.dias,
@@ -197,7 +201,7 @@ function ReglaRow({ r, onSave, onDelete }) {
       es_restriccion_dura: form.es_restriccion_dura ?? true,
       activa: true,
     })
-    setEdit(false)
+    if (guardado) setEdit(false)
   }
 
   return (
@@ -205,6 +209,7 @@ function ReglaRow({ r, onSave, onDelete }) {
       <td className="cli" style={{ maxWidth: 220 }}>
         {edit ? (
           <input
+            readOnly
             value={form.cliente}
             onChange={e => setForm(p => ({ ...p, cliente: e.target.value }))}
             style={inputStyle}
@@ -280,7 +285,7 @@ function ReglaRow({ r, onSave, onDelete }) {
       </td>
       <td><span className="chip c-lo" style={{ fontSize: 10.5 }}>{r.zona}</span></td>
       <td style={{ textAlign: 'center' }}>
-        {edit ? (
+        {r.activa === false ? <span className="chip c-lo">Inactiva</span> : edit ? (
           <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
             <button type="button" className="btn btn-success" style={{ padding: '4px 10px', fontSize: 11 }} onClick={guardar}>Guardar</button>
             <button type="button" className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: 11 }} onClick={() => setEdit(false)}>Cancelar</button>
@@ -292,7 +297,7 @@ function ReglaRow({ r, onSave, onDelete }) {
               type="button"
               className="btn btn-danger"
               style={{ padding: '4px 9px', fontSize: 11 }}
-              title="Eliminar regla"
+              title="Desactivar regla"
               onClick={() => onDelete(r.id)}
             >
               ✕
@@ -306,27 +311,49 @@ function ReglaRow({ r, onSave, onDelete }) {
 
 // ── Componente principal ───────────────────────────────────────
 export default function Configuracion() {
+  const { vehiculos: VEHICULOS_CONFIG, reglas: REGLAS_CLIENTE, clientes, recargar } = useDatos()
   const { usuario } = useAuth()
   const { log }     = useAudit()
   const { toast }   = useToast()
 
+  const [nuevoVehiculo, setNuevoVehiculo] = useState(false)
+  const [clienteFiltro, setClienteFiltro] = useState('')
+  const [inactivas, setInactivas] = useState(false)
+  const [historialReglas, setHistorialReglas] = useState([])
+  const [clienteNuevo, setClienteNuevo] = useState(clientes[0]?.id || '')
   const [tab, setTab]             = useState('vehiculos')
   const [vehiculos, setVehs]      = useState(VEHICULOS_CONFIG)
   const [reglas, setReglas]       = useState(REGLAS_CLIENTE)
   const [reglaAEliminar, setReglaAEliminar] = useState(null) // ID para ConfirmDialog
 
+  useEffect(() => { setVehs(VEHICULOS_CONFIG); setReglas(REGLAS_CLIENTE) }, [VEHICULOS_CONFIG, REGLAS_CLIENTE])
+
+  useEffect(() => {
+    if (!inactivas) return
+    const controller = new AbortController()
+    apiFetch('/datos/reglas?incluir_inactivas=true', { signal: controller.signal }).then(setHistorialReglas).catch(e => { if (!controller.signal.aborted) toast.error(e.message) })
+    return () => controller.abort()
+  }, [inactivas, REGLAS_CLIENTE])
+  const reglasVisibles = (inactivas ? historialReglas : reglas).filter(r => !clienteFiltro || String(r.cliente_id) === clienteFiltro)
+
   // Guardar vehículo
-  const saveVeh = (form) => {
+  const saveVeh = async (form) => {
+    try { await apiFetch(`/datos/vehiculos/${form.id}`, { method: 'PUT', body: JSON.stringify(form) }); recargar() }
+    catch (err) { toast.error(err.message); return false }
     setVehs(prev => prev.map(v => v.id === form.id ? form : v))
     log(usuario, 'Configuración', 'Modificó vehículo', `${form.placa} · Peso: ${form.pesoMax}t · Vol: ${form.volMax}m³ · Conductor: ${form.conductor}`)
     toast.success(`Vehículo ${form.placa} actualizado exitosamente.`)
+    return true
   }
 
   // Guardar regla
-  const saveRegla = (form) => {
+  const saveRegla = async (form) => {
+    try { await apiFetch(`/datos/reglas/${form.id}`, { method: 'PUT', body: JSON.stringify(form) }); recargar() }
+    catch (err) { toast.error(err.message); return false }
     setReglas(prev => prev.map(r => r.id === form.id ? form : r))
     log(usuario, 'Configuración', 'Modificó regla de cliente', `${form.cliente} · Ventana: ${form.ventana} · Días: ${form.dias ? form.dias.join(',') : 'todos'}`)
     toast.success(`Regla para "${form.cliente}" guardada.`)
+    return true
   }
 
   // Confirmar eliminación (Heurística #5 y #3 con Undo)
@@ -334,48 +361,34 @@ export default function Configuracion() {
     setReglaAEliminar(id)
   }
 
-  const ejecutarEliminacion = () => {
-    const regla = reglas.find(r => r.id === reglaAEliminar)
-    if (!regla) return
-
-    setReglas(prev => prev.filter(r => r.id !== reglaAEliminar))
-    log(usuario, 'Configuración', 'Eliminó regla de cliente', `${regla.cliente}`)
-
-    toast.info(`Regla de ${regla.cliente} eliminada.`, {
-      duration: 6000,
-      action: {
-        label: 'Deshacer',
-        onClick: () => {
-          setReglas(prev => [...prev, regla])
-          log(usuario, 'Configuración', 'Restauró regla de cliente (Deshacer)', regla.cliente)
-          toast.success(`Regla de "${regla.cliente}" restaurada.`)
-        }
-      }
-    })
-
-    setReglaAEliminar(null)
+  const ejecutarEliminacion = async () => {
+    try {
+      await apiFetch(`/datos/reglas/${reglaAEliminar}/desactivar`, { method: 'POST' })
+      setReglaAEliminar(null); recargar(); toast.success('Regla desactivada. Se conserva su historial.')
+    } catch (err) { toast.error(err.message) }
   }
 
-  const addRegla = () => {
-    const newId = `r${Date.now()}`
-    const nueva = { id: newId, cliente: 'Nuevo cliente por configurar', pedidoRef: '—', ventana: 'Todo el día', dias: null, zona: 'Centro' }
-    setReglas(prev => [nueva, ...prev])
-    log(usuario, 'Configuración', 'Creó regla de cliente', 'Nueva regla en blanco añadida')
-    toast.info('Nueva regla agregada. Puedes editar el nombre, ventana y días de atención.')
+  const addRegla = async () => {
+    if (!clienteNuevo) return
+    try {
+      await apiFetch('/datos/reglas', { method: 'POST', body: JSON.stringify({ cliente_id: Number(clienteNuevo), ventana: 'Todo el día' }) })
+      recargar(); toast.success('Regla creada. Ya puedes editar sus días y horario.')
+    } catch (err) { toast.error(err.message) }
   }
 
   const reglaSeleccionada = reglaAEliminar ? reglas.find(r => r.id === reglaAEliminar) : null
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <Modal isOpen={nuevoVehiculo} onClose={() => setNuevoVehiculo(false)} title="Registrar vehículo" maxWidth={640}>{nuevoVehiculo && <RegistroVehiculoForm onGuardado={() => { setNuevoVehiculo(false); recargar() }} onCancelar={() => setNuevoVehiculo(false)} />}</Modal>
 
       {/* Diálogo destructivo accesible (Heurística #5) */}
       <ConfirmDialog
         isOpen={Boolean(reglaAEliminar)}
-        title="¿Eliminar regla de cliente?"
+        title="¿Desactivar regla de cliente?"
         message={`¿Estás seguro de que deseas eliminar las restricciones para "${reglaSeleccionada?.cliente}"?`}
         consequence="El algoritmo ya no considerará ventanas horarias ni días restringidos para este cliente, pudiendo asignarlo en fechas no hábiles."
-        confirmLabel="Eliminar regla"
+        confirmLabel="Desactivar regla"
         cancelLabel="Cancelar"
         isDestructive={true}
         onConfirm={ejecutarEliminacion}
@@ -404,10 +417,10 @@ export default function Configuracion() {
         {/* Cabecera de acciones */}
         <div className="ch">
           {tab === 'vehiculos' && (
-            <div>
+            <><div>
               <h3>Maestro de flota de transporte</h3>
               <p>Capacidad máxima de peso (t) y volumen (m³) que el algoritmo usa para repartir pedidos sin saturación.</p>
-            </div>
+            </div><button className="btn blue" onClick={() => setNuevoVehiculo(true)}>＋ Nuevo vehículo</button></>
           )}
           {tab === 'reglas' && (
             <>
@@ -416,6 +429,7 @@ export default function Configuracion() {
                 <p>Ventanas horarias y días permitidos. Los pedidos que no cumplan se reprograman automáticamente (RF-03).</p>
               </div>
               <div className="btns">
+                <select aria-label="Cliente para nueva regla" value={clienteNuevo} onChange={e => setClienteNuevo(e.target.value)}>{clientes.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}</select>
                 <button type="button" className="btn btn-primary" onClick={addRegla} style={{ fontSize: 12, padding: '7px 14px' }}>
                   ＋ Nueva regla
                 </button>
@@ -448,6 +462,7 @@ export default function Configuracion() {
         {/* ── Pestaña Reglas ── */}
         {tab === 'reglas' && (
           <>
+            <div className="ch"><select aria-label="Filtrar reglas por cliente" value={clienteFiltro} onChange={e => setClienteFiltro(e.target.value)}><option value="">Todos los clientes</option>{clientes.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}</select><label style={{fontSize:12}}><input type="checkbox" checked={inactivas} onChange={e => setInactivas(e.target.checked)} /> Incluir reglas inactivas</label></div>
             <div className="tw">
               <table>
                 <thead>
@@ -460,8 +475,8 @@ export default function Configuracion() {
                   </tr>
                 </thead>
                 <tbody>
-                  {reglas.map(r => <ReglaRow key={r.id} r={r} onSave={saveRegla} onDelete={solicitarEliminacion} />)}
-                  {reglas.length === 0 && (
+                  {reglasVisibles.map(r => <ReglaRow key={r.id} r={r} onSave={saveRegla} onDelete={solicitarEliminacion} />)}
+                  {reglasVisibles.length === 0 && (
                     <tr>
                       <td colSpan={5} className="empty">
                         <b>Sin reglas configuradas</b>

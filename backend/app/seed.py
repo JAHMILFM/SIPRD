@@ -3,6 +3,7 @@ from datetime import datetime, date, time
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
 from backend.app.core.db import AsyncSessionLocal, engine, Base
+from backend.app.core.config import settings
 from backend.app.core.seguridad import hash_contrasena
 from backend.app.models import (
     Rol, Usuario, Vehiculo, Cliente, Pedido, ReglaCliente,
@@ -125,7 +126,7 @@ async def sembrar_datos_iniciales(db: AsyncSession):
 
     # 2. Sembrar Usuarios
     for ud in USUARIOS_DEMO:
-        res = await db.execute(select(Usuario).where(Usuario.correo == ud["correo"]))
+        res = await db.execute(select(Usuario).where((Usuario.correo == ud["correo"]) | (Usuario.id_usuario == ud["id_usuario"])))
         if not res.scalars().first():
             u = Usuario(
                 id_usuario=ud["id_usuario"],
@@ -133,6 +134,7 @@ async def sembrar_datos_iniciales(db: AsyncSession):
                 nombres=ud["nombres"],
                 apellidos=ud["apellidos"],
                 correo=ud["correo"],
+                nombre_usuario=ud["correo"].split("@")[0],
                 password_hash=hash_contrasena(ud["clave"]),
                 activo=True
             )
@@ -244,9 +246,14 @@ async def inicializar_bd():
         if SCHEMA:
             await conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {SCHEMA};"))
         await conn.run_sync(Base.metadata.create_all)
+        from backend.app.migraciones import migrar
+        await migrar(conn)
 
     async with AsyncSessionLocal() as session:
         await sembrar_datos_iniciales(session)
+        if settings.DATOS_DEMO:
+            from backend.app.datos_demo import cargar_demo
+            await cargar_demo(session)
 
 
 if __name__ == "__main__":

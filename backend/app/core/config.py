@@ -5,9 +5,11 @@ import os
 
 class Settings(BaseSettings):
     APP_NAME: str = "SIPRD API"
-    VERSION: str = "0.2.0"
+    VERSION: str = "0.3.3"
     ENTORNO: str = "desarrollo"
     DEBUG: bool = True
+    DATOS_DEMO: bool = True
+    SIPRD_API_PORT: int = 8000
     
     # Configuración PostgreSQL formal (siprd_db)
     POSTGRES_USER: str = os.getenv("POSTGRES_USER", "postgres")

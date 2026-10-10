@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { RUTAS_ACTIVAS } from '../data/mockRutas'
+import { useDatos } from '../context/DatosContext'
 
 /**
  * Dashboard de inicio.
@@ -8,6 +8,7 @@ import { RUTAS_ACTIVAS } from '../data/mockRutas'
  * Diseñado bajo Heurística #1 (estado del sistema visible) y Ley de Miller (chunking).
  */
 export default function Inicio() {
+  const { rutas: RUTAS_ACTIVAS } = useDatos()
   const [filtroActividad, setFiltroActividad] = useState('todas')
 
   // ── métricas calculadas desde las rutas activas ──────────────
@@ -39,7 +40,7 @@ export default function Inicio() {
       pct: porcentaje,
       KPI: kpiList
     }
-  }, [])
+  }, [RUTAS_ACTIVAS])
 
   // ── actividad reciente ────────────────────────────────────────
   const actividad = useMemo(() => {
@@ -48,7 +49,7 @@ export default function Inicio() {
         .filter(p => p.estado === 'entregado' || p.estado === 'ATENDIDA')
         .map(p => ({ ...p, conductor: r.vehiculo.conductor, ruta: r.id, color: r.color }))
     ).sort((a, b) => String(b.horaReal ?? '').localeCompare(String(a.horaReal ?? '')))
-  }, [])
+  }, [RUTAS_ACTIVAS])
 
   const actividadFiltrada = useMemo(() => {
     return filtroActividad === 'todas'

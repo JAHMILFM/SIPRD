@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useId } from 'react'
 
 /**
  * Modal accesible y reutilizable (Cumple Heurística #3 y WCAG 2.1)
@@ -15,6 +15,7 @@ export default function Modal({
   maxWidth = 520,
   hideCloseBtn = false,
 }) {
+  const titleId = useId()
   const modalRef = useRef(null)
   const previousActiveElement = useRef(null)
 
@@ -23,7 +24,12 @@ export default function Modal({
 
     previousActiveElement.current = document.activeElement
 
+    const esSuperior = () => {
+      const abiertos = document.querySelectorAll('.modal-overlay[role="dialog"]')
+      return modalRef.current?.parentElement === abiertos[abiertos.length - 1]
+    }
     const handleKeyDown = (e) => {
+      if (!esSuperior()) return
       if (e.key === 'Escape') {
         e.stopPropagation()
         onClose?.()
@@ -62,7 +68,7 @@ export default function Modal({
 
     // Enfocar primer elemento interactivo o el modal
     const focusTimer = setTimeout(() => {
-      if (modalRef.current) {
+      if (modalRef.current && esSuperior()) {
         const focusable = modalRef.current.querySelector(
           'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
         )
@@ -85,7 +91,7 @@ export default function Modal({
   if (!isOpen) return null
 
   return (
-    <div className="modal-overlay" onClick={onClose} aria-modal="true" role="dialog" aria-labelledby="modal-title">
+    <div className="modal-overlay" onClick={onClose} aria-modal="true" role="dialog" aria-labelledby={titleId}>
       <div
         ref={modalRef}
         className="modal-box"
@@ -95,7 +101,7 @@ export default function Modal({
       >
         <div className="modal-hd">
           <div>
-            <h3 id="modal-title" className="modal-title-text">{title}</h3>
+            <h3 id={titleId} className="modal-title-text">{title}</h3>
             {subtitle && <p className="modal-subtitle-text">{subtitle}</p>}
           </div>
           {!hideCloseBtn && (

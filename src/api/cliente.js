@@ -52,7 +52,7 @@ export async function apiFetch(endpoint, opciones = {}) {
       }
       throw new ApiError(
         dataError.codigo || 'ERROR_PETICION',
-        dataError.mensaje || 'Error en la comunicación con el servidor',
+        dataError.mensaje || (typeof dataError.detail === 'string' ? dataError.detail : 'Error en la comunicación con el servidor'),
         dataError.detalle,
         res.status
       )

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Literal
 from backend.app.core.db import get_db
 from backend.app.core.seguridad import require_roles
 from backend.app.core.errores import ErrorNoEncontrado, ErrorReglaNegocio
@@ -12,12 +12,14 @@ from backend.app.models import Vehiculo
 router = APIRouter(prefix="/vehiculos", tags=["Gestión de Vehículos"])
 
 class VehiculoCreate(BaseModel):
-    placa: str
+    model_config = {"str_strip_whitespace": True}
+    placa: str = Field(min_length=3,max_length=20)
     marca: Optional[str] = None
     modelo: Optional[str] = None
     conductor: Optional[str] = None
     capacidad_peso_kg: float = Field(..., gt=0, description="Capacidad en kilogramos")
     capacidad_volumen_m3: float = Field(..., gt=0, description="Capacidad en metros cúbicos")
+    estado: Literal["DISPONIBLE","ASIGNADO","MANTENIMIENTO","INACTIVO"] = "DISPONIBLE"
     inicio_jornada: str = "07:30"
     fin_jornada: str = "17:30"
 
@@ -35,7 +37,7 @@ class VehiculoUpdate(BaseModel):
 async def listar_vehiculos(
     disponibles: Optional[bool] = Query(None, description="Filtrar solo vehículos operativos y activos"),
     db: AsyncSession = Depends(get_db),
-    usuario: dict = Depends(require_roles(["ASISTENTE", "JEFE", "ADMINISTRADOR"]))
+    usuario: dict = Depends(require_roles(["ASISTENTE", "JEFE"]))
 ):
     query = select(Vehiculo)
     if disponibles is True:
@@ -58,7 +60,7 @@ async def listar_vehiculos(
             "capacidad_m3": v.capacidad_volumen_m3,
             "volMax": v.capacidad_volumen_m3,
             "estado_operativo": v.estado_operativo,
-            "estado": "ASIGNADO" if v.estado_operativo == "OPERATIVO" else v.estado_operativo,
+            "estado": v.estado,
             "inicio_jornada": v.inicio_jornada,
             "fin_jornada": v.fin_jornada,
             "activo": v.activo
@@ -70,7 +72,7 @@ async def listar_vehiculos(
 async def crear_vehiculo(
     req: VehiculoCreate,
     db: AsyncSession = Depends(get_db),
-    usuario: dict = Depends(require_roles(["ASISTENTE", "JEFE", "ADMINISTRADOR"]))
+    usuario: dict = Depends(require_roles(["ASISTENTE", "JEFE"]))
 ):
     # Validar placa única
     existente = await db.execute(select(Vehiculo).where(Vehiculo.placa == req.placa.upper().strip()))
@@ -86,8 +88,8 @@ async def crear_vehiculo(
         capacidad_volumen_m3=req.capacidad_volumen_m3,
         inicio_jornada=req.inicio_jornada,
         fin_jornada=req.fin_jornada,
-        estado_operativo="OPERATIVO",
-        activo=True
+        estado=req.estado,
+        activo=req.estado in ["DISPONIBLE","ASIGNADO"]
     )
     db.add(nuevo)
     await db.flush()
@@ -108,7 +110,7 @@ async def crear_vehiculo(
 async def desactivar_vehiculo(
     id: str,
     db: AsyncSession = Depends(get_db),
-    usuario: dict = Depends(require_roles(["ASISTENTE", "JEFE", "ADMINISTRADOR"]))
+    usuario: dict = Depends(require_roles(["ASISTENTE", "JEFE"]))
 ):
     v = await db.get(Vehiculo, id)
     if not v:

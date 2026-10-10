@@ -5,6 +5,7 @@ import { AuditProvider } from './context/AuditContext'
 import { ToastProvider } from './context/ToastContext'
 import ErrorBoundary from './components/ErrorBoundary'
 import App from './App'
+import { DatosProvider } from './context/DatosContext'
 import './index.css'
 import 'leaflet/dist/leaflet.css'
 
@@ -14,7 +15,7 @@ createRoot(document.getElementById('root')).render(
       <AuthProvider>
         <AuditProvider>
           <ToastProvider>
-            <App />
+            <DatosProvider><App /></DatosProvider>
           </ToastProvider>
         </AuditProvider>
       </AuthProvider>

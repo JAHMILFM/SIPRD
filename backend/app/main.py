@@ -15,7 +15,6 @@ from backend.app.modules.auth.router import router as auth_router
 from backend.app.modules.usuarios.router import router as usuarios_router
 from backend.app.modules.vehiculos.router import router as vehiculos_router
 from backend.app.modules.clientes.router import router as clientes_router
-from backend.app.modules.reglas_atencion.router import router as reglas_router
 from backend.app.modules.pedidos.router import router as pedidos_router
 from backend.app.modules.planificacion.router import router as planificacion_router
 from backend.app.modules.reparto.router import router as reparto_router
@@ -106,7 +105,7 @@ app.include_router(auth_router, prefix="/api/v1")
 app.include_router(usuarios_router, prefix="/api/v1")
 app.include_router(vehiculos_router, prefix="/api/v1")
 app.include_router(clientes_router, prefix="/api/v1")
-app.include_router(reglas_router, prefix="/api/v1")
+
 app.include_router(pedidos_router, prefix="/api/v1")
 app.include_router(planificacion_router, prefix="/api/v1")
 app.include_router(reparto_router, prefix="/api/v1")
@@ -116,4 +115,7 @@ app.include_router(auditoria_router, prefix="/api/v1")
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("backend.app.main:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run("backend.app.main:app", host="127.0.0.1", port=settings.SIPRD_API_PORT, reload=True)
+
+from backend.app.datos_web import router as datos_router
+app.include_router(datos_router, prefix="/api/v1")

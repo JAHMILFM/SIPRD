@@ -1,12 +1,11 @@
-import { FECHA } from '../data/mock'
 
-export default function ParamsBar({ criterio, setCriterio, turno, setTurno, jornadaMax, setJornadaMax, onEditarReglas }) {
+export default function ParamsBar({ criterio, setCriterio, turno, setTurno, jornadaMax, setJornadaMax, onEditarReglas, fecha, setFecha, totalReglas = 0 }) {
   return (
     <div className="card">
       <div className="params">
         <div>
           <span className="lbl">Fecha de reparto</span>
-          <div className="fld">{FECHA} <span style={{ color: '#94A3B8' }}>📅</span></div>
+          <div className="fld"><input aria-label="Fecha de reparto" type="date" required value={fecha} onChange={e => setFecha(e.target.value)} style={{border:0,background:'none',font:'inherit',width:'100%'}} /></div>
         </div>
 
         <div>
@@ -53,7 +52,7 @@ export default function ParamsBar({ criterio, setCriterio, turno, setTurno, jorn
         <div>
           <span className="lbl">Reglas por cliente</span>
           <div className="fld">
-            <span>12 activas</span>
+            <span>{totalReglas} activas</span>
             <button
               type="button"
               onClick={onEditarReglas}
@@ -66,8 +65,8 @@ export default function ParamsBar({ criterio, setCriterio, turno, setTurno, jorn
         </div>
 
         <div className="matrix">
-          <b>Matriz OSRM lista</b>
-          <i><span className="ok" />Calculada 08:45 a.m.</i>
+          <b>Vista previa de flota</b>
+          <i><span className="ok" />Revisar antes de aprobar</i>
         </div>
       </div>
     </div>

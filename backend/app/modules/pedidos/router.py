@@ -189,7 +189,7 @@ async def importar_corte(
 async def cerrar_pedido(
     id: str,
     db: AsyncSession = Depends(get_db),
-    usuario: dict = Depends(require_roles(["TESORERIA", "JEFE", "ADMINISTRADOR"]))
+    usuario: dict = Depends(require_roles(["TESORERIA"]))
 ):
     """
     Cierre formal del pedido (RN-COB-01 y RN-COB-02):
@@ -204,14 +204,15 @@ async def cerrar_pedido(
         select(Cobro).where(Cobro.pedido_id == id, Cobro.estado == "CONFORME")
     )
     cobros_conforme = cobros_q.scalars().all()
-    suma_conforme = sum(c.importe for c in cobros_conforme)
+    suma_conforme = sum(float(c.importe) for c in cobros_conforme)
 
-    if round(suma_conforme, 2) < round(p.importe_total, 2):
+    if round(suma_conforme, 2) != round(p.importe_total, 2):
         raise ErrorReglaNegocio(
             regla="CIERRE_NO_PERMITIDO",
             mensaje=f"No se puede cerrar el pedido {p.codigo_externo}. Total pagado conforme S/ {suma_conforme:.2f} no cubre el total de S/ {p.importe_total:.2f} (RN-COB-01)."
         )
 
+    if p.estado != "ENTREGADO":raise HTTPException(409,"Primero debe registrarse la entrega")
     estado_prev = p.estado
     p.estado = "CERRADO"
 

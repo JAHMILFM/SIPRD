@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react'
-import { NO_PLANIFICABLES } from '../data/mock'
 import { hhmm } from '../lib/planner'
 import { useToast } from '../context/ToastContext'
 
@@ -12,7 +11,7 @@ function chipPrioridad(p) {
   return <span className={`chip ${clase}`}><span aria-hidden="true">{icon}</span> {p}</span>
 }
 
-export default function OrdersPanel({ plan, reprogramados }) {
+export default function OrdersPanel({ plan, reprogramados, noPlanificables = [] }) {
   const { toast } = useToast()
   const [tab, setTab]         = useState('pedidos')
   const [pagina, setPagina]   = useState(0)
@@ -118,7 +117,7 @@ export default function OrdersPanel({ plan, reprogramados }) {
           onClick={() => cambiarTab('nop')}
           aria-selected={tab === 'nop'}
         >
-          No planificables <span className="cnt dang">{NO_PLANIFICABLES.length}</span>
+          No planificables <span className="cnt dang">{noPlanificables.length}</span>
         </button>
       </div>
 
@@ -457,7 +456,7 @@ export default function OrdersPanel({ plan, reprogramados }) {
               </tr>
             </thead>
             <tbody>
-              {NO_PLANIFICABLES.map((p) => (
+              {noPlanificables.map((p) => (
                 <tr key={p.id}>
                   <td>#{p.id}</td>
                   <td className="cli"><b>{p.cliente}</b></td>
@@ -468,9 +467,9 @@ export default function OrdersPanel({ plan, reprogramados }) {
                       type="button"
                       className="btn btn-secondary"
                       style={{ padding: '4px 10px', fontSize: 11 }}
-                      onClick={() => toast.info(`Abriendo editor de dirección para pedido #${p.id}`)}
+                      onClick={() => toast.info(p.detalle || 'Este pedido requiere revisión antes de planificar.')}
                     >
-                      Corregir
+                      Ver motivo
                     </button>
                   </td>
                 </tr>

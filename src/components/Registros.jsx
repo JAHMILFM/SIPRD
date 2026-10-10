@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useAudit } from '../context/AuditContext'
 import { useToast } from '../context/ToastContext'
+import { apiFetch } from '../api/cliente'
 
 const MOD_COLOR = {
   Algoritmo:      '#2563EB',
@@ -13,7 +14,11 @@ const MOD_COLOR = {
 const ROL_CHIP = {
   jefe:      ['c-hi', 'Jefe'],
   asistente: ['c-gn', 'Asistente'],
-  ti:        ['c-lo', 'TI'],
+  ti: ['c-lo', 'TI'],
+  administrador: ['c-lo', 'Administrador'],
+  repartidor: ['c-gn', 'Repartidor'],
+  tesoreria: ['c-md', 'Tesorería'],
+  sistema: ['c-lo', 'Sistema'],
 }
 
 /**
@@ -25,8 +30,9 @@ const ROL_CHIP = {
 export default function Registros() {
   const { registros: registrosLocales } = useAudit()
   const { toast }     = useToast()
-  const [registrosApi, setRegistrosApi] = useState([])
+  const [registrosApi, setRegistrosApi] = useState(null)
   const [cargandoApi, setCargandoApi]   = useState(false)
+  const [errorApi, setErrorApi] = useState('')
   const [filtroMod, setFiltroMod]       = useState('todos')
   const [busca, setBusca]               = useState('')
 
@@ -35,12 +41,8 @@ export default function Registros() {
     async function cargarAuditoria() {
       setCargandoApi(true)
       try {
-        const token = localStorage.getItem('siprd_access_token')
-        const headers = token ? { Authorization: `Bearer ${token}` } : {}
-        const res = await fetch('/api/v1/auditoria?limite=100', { headers })
-        if (res.ok) {
-          const data = await res.json()
-          if (activo && Array.isArray(data) && data.length > 0) {
+        const data = await apiFetch('/auditoria?limite=100')
+        if (activo && Array.isArray(data)) {
             const adaptados = data.map(item => {
               const dt = new Date(item.fecha)
               const modMap = {
@@ -60,18 +62,19 @@ export default function Registros() {
                 id: item.id?.slice(0, 8) || '0',
                 fecha: dt.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' }),
                 hora: dt.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-                usuario: item.usuario_id ? `Usuario (${item.usuario_id.slice(0, 6)})` : 'Dennys Huerta',
-                rolUsuario: 'jefe',
+                usuario: item.usuario_nombre || (item.usuario_id ? `Cuenta #${item.usuario_id}` : 'Sistema'),
+                usuarioLogin: item.usuario_login || '',
+                correo: item.usuario_correo || '',
+                rolUsuario: item.usuario_rol?.toLowerCase() || 'sistema',
                 modulo: modNormalizado,
                 accion: item.accion || 'OPERACION',
-                detalle: item.valores_despues ? JSON.stringify(item.valores_despues) : (item.entidad_id ? `Ref: ${item.entidad_id.slice(0, 8)}` : 'Registro auditado en BD')
+                detalle: item.valores_despues ? JSON.stringify(item.valores_despues) : (item.entidad_id ? `Ref: ${String(item.entidad_id).slice(0, 8)}` : 'Registro auditado en BD')
               }
             })
             setRegistrosApi(adaptados)
-          }
         }
-      } catch {
-        // Fallback local silencioso
+      } catch (e) {
+        if (activo) setErrorApi(e.message)
       } finally {
         if (activo) setCargandoApi(false)
       }
@@ -81,7 +84,7 @@ export default function Registros() {
   }, [])
 
   const registros = useMemo(() => {
-    return registrosApi.length > 0 ? registrosApi : registrosLocales
+    return registrosApi ?? registrosLocales
   }, [registrosApi, registrosLocales])
 
   const modulos = useMemo(() => [...new Set(registros.map(r => r.modulo))], [registros])
@@ -92,7 +95,7 @@ export default function Registros() {
       if (busca) {
         const q = busca.toLowerCase()
         return (
-          r.usuario.toLowerCase().includes(q) ||
+          r.usuario.toLowerCase().includes(q) || (r.correo || '').toLowerCase().includes(q) || (r.usuarioLogin || '').toLowerCase().includes(q) ||
           r.accion.toLowerCase().includes(q) ||
           (r.detalle && r.detalle.toLowerCase().includes(q))
         )
@@ -153,6 +156,7 @@ export default function Registros() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {errorApi && <p role="alert" className="op-error">No se pudieron cargar los registros: {errorApi}</p>}
 
       {/* KPI strip */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px,1fr))', gap: 12 }}>
@@ -257,7 +261,7 @@ export default function Registros() {
                   <tr key={r.id}>
                     <td style={{ fontFamily: 'monospace', fontSize: 11, color: '#64748b', whiteSpace: 'nowrap' }}>{r.fecha}</td>
                     <td style={{ fontFamily: 'monospace', fontSize: 11, color: '#64748b', whiteSpace: 'nowrap' }}>{r.hora}</td>
-                    <td style={{ fontWeight: 700, fontSize: 12, color: 'var(--ink)' }}>{r.usuario}</td>
+                    <td style={{ fontWeight: 700, fontSize: 12, color: 'var(--ink)' }}>{r.usuario}<small style={{display:'block',fontWeight:400,color:'#64748b'}}>{r.usuarioLogin}{r.correo ? ` · ${r.correo}` : ''}</small></td>
                     <td><span className={`chip ${rolCls}`}>{rolLabel}</span></td>
                     <td>
                       <span style={{ display: 'inline-block', background: color + '15', color, borderRadius: 5, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>

@@ -6,6 +6,8 @@ from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import List, Optional
 from backend.app.core.config import settings
+from backend.app.core.db import get_db
+from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.core.errores import ErrorNoAutorizado, ErrorAccesoDenegado
 
 ph = PasswordHasher()
@@ -47,13 +49,21 @@ def decodificar_token(token: str) -> dict:
     except jwt.InvalidTokenError:
         raise ErrorNoAutorizado("Token inválido")
 
-async def obtener_usuario_actual(credenciales: Optional[HTTPAuthorizationCredentials] = Depends(security)) -> dict:
+async def obtener_usuario_actual(credenciales: Optional[HTTPAuthorizationCredentials] = Depends(security), db: AsyncSession = Depends(get_db)) -> dict:
     """Dependencia para autenticar la petición y extraer el usuario del token."""
     if not credenciales:
         raise ErrorNoAutorizado("Se requiere autenticación Bearer")
     payload = decodificar_token(credenciales.credentials)
     if payload.get("tipo") != "access":
         raise ErrorNoAutorizado("Token inválido para esta operación")
+    from backend.app.models import Usuario
+    try:
+        user = await db.get(Usuario, int(payload["sub"]))
+    except (ValueError, KeyError, TypeError):
+        raise ErrorNoAutorizado("Sesión inválida")
+    if not user or not user.activo:
+        raise ErrorNoAutorizado("La cuenta está desactivada")
+    payload["rol"] = user.rol
     return payload
 
 def require_roles(roles_permitidos: List[str]):

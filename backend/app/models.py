@@ -6,7 +6,7 @@ from sqlalchemy import (
     DateTime, Date, Time, Text, ForeignKey, JSON, Numeric
 )
 from sqlalchemy.types import TypeDecorator
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, synonym
 from sqlalchemy.ext.hybrid import hybrid_property
 from backend.app.core.db import Base
 from backend.app.core.config import settings
@@ -15,6 +15,15 @@ from backend.app.core.tiempo import ahora
 class BigInteger(TypeDecorator):
     """Acepta identificadores numericos serializados como texto por la API."""
     impl = SQLBigInteger
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        return int(value) if value is not None else None
+
+
+class IdInteger(TypeDecorator):
+    """Normaliza también las claves primarias recibidas como texto en URLs."""
+    impl = Integer
     cache_ok = True
 
     def process_bind_param(self, value, dialect):
@@ -38,7 +47,7 @@ def fk_target(target: str) -> str:
 
 def pk_column(name=None):
     """Genera PK autoincrementable compatible con PostgreSQL (BIGINT IDENTITY) y SQLite (INTEGER AUTOINCREMENT)."""
-    col_type = Integer().with_variant(BigInteger, "postgresql")
+    col_type = IdInteger().with_variant(BigInteger, "postgresql")
     if name:
         return Column(name, col_type, primary_key=True, autoincrement=True)
     return Column(col_type, primary_key=True, autoincrement=True)
@@ -72,6 +81,10 @@ class Usuario(Base):
     rol_rel = relationship("Rol", back_populates="usuarios", lazy="joined")
     tokens = relationship("TokenRefresco", back_populates="usuario_rel", cascade="all, delete-orphan")
 
+    nombre_usuario = Column(String(80), unique=True, nullable=True)
+    documento = Column(String(30), nullable=True)
+    fecha_ultimo_acceso = Column(DateTime(timezone=True), nullable=True)
+
     # Propiedades de compatibilidad
     @hybrid_property
     def id(self) -> str:
@@ -91,11 +104,11 @@ class Usuario(Base):
 
     @hybrid_property
     def usuario(self) -> str:
-        return self.correo.split("@")[0]
+        return self.nombre_usuario or self.correo.split("@")[0]
 
     @usuario.setter
     def usuario(self, val: str):
-        pass
+        self.nombre_usuario = val.strip().lower()
 
     @usuario.expression
     def usuario(cls):
@@ -124,11 +137,11 @@ class Usuario(Base):
 
     @property
     def ultimo_acceso(self):
-        return None
+        return self.fecha_ultimo_acceso
 
     @ultimo_acceso.setter
     def ultimo_acceso(self, val):
-        pass
+        self.fecha_ultimo_acceso = val
 
     @property
     def creado_en(self):
@@ -161,6 +174,7 @@ class Vehiculo(Base):
     id_vehiculo = pk_column("id_vehiculo")
     codigo_externo = Column(String(80), nullable=False, unique=True, default=lambda: f"VEH-{uuid.uuid4().hex[:6].upper()}")
     placa = Column(String(20), nullable=False, unique=True, index=True)
+    conductor_nombre = Column(String(150), nullable=True)
     marca = Column(String(80), nullable=True)
     modelo = Column(String(80), nullable=True)
     capacidad_kg = Column(Numeric(12, 2), nullable=False)
@@ -195,7 +209,11 @@ class Vehiculo(Base):
             "VEH-004": "Kevin Vargas",
             "VEH-005": "Maycol Yance"
         }
-        return conductores.get(self.placa, conductores.get(self.codigo_externo, "Conductor Asignado"))
+        return self.conductor_nombre or conductores.get(self.placa, conductores.get(self.codigo_externo, "Conductor Asignado"))
+
+    @conductor.setter
+    def conductor(self, value):
+        self.conductor_nombre = value
 
     @property
     def capacidad_peso_kg(self) -> float:
@@ -229,9 +247,6 @@ class Vehiculo(Base):
     def fin_jornada(self, val):
         pass
 
-    @conductor.setter
-    def conductor(self, val):
-        pass
 
     @capacidad_peso_kg.setter
     def capacidad_peso_kg(self, val):
@@ -448,6 +463,7 @@ class Ruta(Base):
     id_vehiculo = Column(BigInteger, ForeignKey(fk_target("vehiculos.id_vehiculo")), nullable=False)
     id_ejecucion = Column(BigInteger, ForeignKey(fk_target("ejecuciones_optimizacion.id_ejecucion")), nullable=True)
     version_id = Column(String(36), ForeignKey(fk_target("planificaciones_versiones.id")), nullable=True)
+    id_repartidor = Column(BigInteger, ForeignKey(fk_target("usuarios.id_usuario")), nullable=True)
     fecha_ruta = Column(Date, nullable=False)
     estado = Column(String(20), default="GENERADA", nullable=False) # GENERADA, EN_REVISION, APROBADA, PUBLICADA, EN_EJECUCION, FINALIZADA, CANCELADA, INVIABLE
     distancia_total_km = Column(Numeric(12, 3), default=0, nullable=False)
@@ -459,7 +475,7 @@ class Ruta(Base):
 
     vehiculo_rel = relationship("Vehiculo", back_populates="rutas")
     ejecucion_rel = relationship("EjecucionOptimizacion", back_populates="rutas")
-    aprobador_rel = relationship("Usuario")
+    aprobador_rel = relationship("Usuario", foreign_keys=[id_usuario_aprobador])
     paradas = relationship("ParadaRuta", back_populates="ruta_rel", order_by="ParadaRuta.secuencia")
 
     @hybrid_property
@@ -532,15 +548,15 @@ class Ruta(Base):
 
     @hybrid_property
     def repartidor_id(self) -> Optional[str]:
-        return str(self.id_usuario_aprobador) if self.id_usuario_aprobador else None
+        return str(self.id_repartidor) if self.id_repartidor else None
 
     @repartidor_id.setter
     def repartidor_id(self, val):
-        self.id_usuario_aprobador = int(val) if val is not None else None
+        self.id_repartidor = int(val) if val is not None else None
 
     @repartidor_id.expression
     def repartidor_id(cls):
-        return cls.id_usuario_aprobador
+        return cls.id_repartidor
 
 
 class ParadaRuta(Base):
@@ -682,18 +698,9 @@ class Incidencia(Base):
     def ruta_id(self) -> Optional[str]:
         return str(self.parada_rel.id_ruta) if self.parada_rel else None
 
-    @property
-    def registrada_por(self) -> Optional[str]:
-        return None
-
-    @property
-    def atendida_por(self) -> Optional[str]:
-        return None
-
-    @property
-    def resolucion(self) -> Optional[str]:
-        return None
-
+    registrada_por = Column(BigInteger, ForeignKey(fk_target("usuarios.id_usuario")), nullable=True)
+    atendida_por = Column(BigInteger, ForeignKey(fk_target("usuarios.id_usuario")), nullable=True)
+    resolucion = Column(String(1000), nullable=True)
 
 
 # ── 7. Auditoría Inmutable ─────────────────────────────────────────
@@ -705,6 +712,7 @@ class Auditoria(Base):
     id_usuario = Column(BigInteger, ForeignKey(fk_target("usuarios.id_usuario")), nullable=True)
     entidad = Column(String(50), nullable=False)
     id_entidad = Column(BigInteger, default=0, nullable=False)
+    referencia_entidad = Column(String(80), nullable=True)
     accion = Column(String(30), nullable=False) # CREAR, ACTUALIZAR, ELIMINAR, APROBAR, PUBLICAR, REOPTIMIZAR
     valor_anterior = Column(JSON, nullable=True)
     valor_nuevo = Column(JSON, nullable=True)
@@ -730,10 +738,11 @@ class Auditoria(Base):
 
     @hybrid_property
     def entidad_id(self) -> Optional[str]:
-        return str(self.id_entidad) if self.id_entidad is not None else None
+        return self.referencia_entidad or (str(self.id_entidad) if self.id_entidad is not None else None)
 
     @entidad_id.setter
     def entidad_id(self, val):
+        self.referencia_entidad = str(val) if val is not None else None
         try:
             self.id_entidad = int(val) if val is not None else 0
         except (ValueError, TypeError):
@@ -741,7 +750,7 @@ class Auditoria(Base):
 
     @entidad_id.expression
     def entidad_id(cls):
-        return cls.id_entidad
+        return cls.referencia_entidad
 
     @hybrid_property
     def fecha(self) -> datetime:
@@ -818,7 +827,8 @@ class Cobro(Base):
     parada_id = Column(BigInteger, ForeignKey(fk_target("paradas_ruta.id_parada")), nullable=True)
     pedido_id = Column(BigInteger, ForeignKey(fk_target("pedidos.id_pedido")), nullable=True)
     metodo_pago = Column(String(30), nullable=False) # EFECTIVO, TRANSFERENCIA, YAPE, PLIN, CHEQUE
-    monto_esperado = Column(Numeric(12, 2), nullable=False)
+    numero_operacion = Column(String(100), nullable=True)
+    monto_esperado = Column(Numeric(12, 2), default=0, nullable=False)
     monto_cobrado = Column(Numeric(12, 2), nullable=False)
     estado = Column(String(30), default="PENDIENTE", nullable=False) # PENDIENTE, VALIDADO, RECHAZADO
     nota = Column(Text, nullable=True)
@@ -830,6 +840,13 @@ class Cobro(Base):
     comprobantes = relationship("ComprobantePago", back_populates="cobro_rel", cascade="all, delete-orphan")
 
 
+    importe = synonym("monto_cobrado")
+    medio_pago = synonym("metodo_pago")
+    creado_en = synonym("fecha_registro")
+    contrastado_por = synonym("validado_por")
+    contrastado_en = synonym("fecha_validacion")
+
+
 class ObservacionCobro(Base):
     __tablename__ = "observaciones_cobro"
     __table_args__ = table_args()
@@ -837,9 +854,14 @@ class ObservacionCobro(Base):
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     cobro_id = Column(String(36), ForeignKey(fk_target("cobros.id")), nullable=False)
     usuario_id = Column(BigInteger, ForeignKey(fk_target("usuarios.id_usuario")), nullable=True)
-    motivo = Column(String(100), nullable=False)
+    motivo = Column(String(100), default="DIFERENCIA", nullable=False)
     detalle = Column(Text, nullable=True)
     creado_en = Column(DateTime(timezone=True), default=ahora, nullable=False)
+
+
+    resuelta = Column(Boolean, default=False, nullable=False)
+    texto = synonym("detalle")
+    registrada_por = synonym("usuario_id")
 
 
 class AccesoComprobante(Base):
@@ -852,6 +874,9 @@ class AccesoComprobante(Base):
     ip_origen = Column(String(45), nullable=True)
     fecha_hora = Column(DateTime(timezone=True), default=ahora, nullable=False)
 
+
+
+    accion = Column(String(30), default="VER", nullable=False)
 
 
 class ComprobantePago(Base):
@@ -867,6 +892,12 @@ class ComprobantePago(Base):
     subido_en = Column(DateTime(timezone=True), default=ahora, nullable=False)
 
     cobro_rel = relationship("Cobro", back_populates="comprobantes")
+
+
+    version = Column(Integer, default=1, nullable=False)
+    vigente = Column(Boolean, default=True, nullable=False)
+    subido_por = Column(BigInteger, ForeignKey(fk_target("usuarios.id_usuario")), nullable=True)
+    clave_archivo = synonym("ruta_almacenamiento")
 
 
 class ImportacionPedidos(Base):

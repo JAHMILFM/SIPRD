@@ -13,12 +13,12 @@ async def consultar_auditoria(
     entidad: Optional[str] = Query(None),
     entidad_id: Optional[str] = Query(None),
     usuario_id: Optional[str] = Query(None),
-    limite: int = Query(50, le=200),
+    limite: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
     admin: dict = Depends(require_roles(["ADMINISTRADOR", "JEFE"]))
 ):
     """Consulta la bitácora inmutable de auditoría del sistema (RNF-TRZ-01)."""
-    query = select(Auditoria)
+    query = select(Auditoria, Usuario).outerjoin(Usuario, Auditoria.id_usuario == Usuario.id_usuario)
     if entidad:
         query = query.where(Auditoria.entidad == entidad.lower())
     if entidad_id:
@@ -26,12 +26,16 @@ async def consultar_auditoria(
     if usuario_id:
         query = query.where(Auditoria.usuario_id == usuario_id)
 
-    result = await db.execute(query.order_by(Auditoria.fecha.desc()).limit(limite))
-    registros = result.scalars().all()
+    result = await db.execute(query.order_by(Auditoria.fecha_hora.desc()).limit(limite))
+    registros = result.all()
     return [
         {
             "id": a.id,
             "usuario_id": a.usuario_id,
+            "usuario_nombre": f"{u.nombres} {u.apellidos}".strip() if u else "Sistema",
+            "usuario_login": u.usuario if u else None,
+            "usuario_correo": u.correo if u else None,
+            "usuario_rol": u.rol if u else None,
             "accion": a.accion,
             "entidad": a.entidad,
             "entidad_id": a.entidad_id,
@@ -41,5 +45,5 @@ async def consultar_auditoria(
             "request_id": a.request_id,
             "fecha": a.fecha
         }
-        for a in registros
+        for a, u in registros
     ]

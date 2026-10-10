@@ -5,11 +5,15 @@ const TODOS_MODULOS = [
   { id: 'algoritmo', label: 'Algoritmo',     shortcut: '2' },
   { id: 'rutas',     label: 'Rutas',         shortcut: '3' },
   { id: 'cobranzas', label: 'Cobranzas',     shortcut: '4' },
+  { id: 'usuarios', label: 'Usuarios', shortcut: '8' },
   { id: 'config',    label: 'Configuración', shortcut: '5' },
+  { id: 'incidencias', label: 'Incidencias', shortcut: '7' },
   { id: 'registros', label: 'Registros',     shortcut: '6' },
 ]
 
 const ICONOS = {
+  usuarios: 'M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2M20 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75M13 7a4 4 0 11-8 0 4 4 0 018 0z',
+  incidencias: 'M12 8v5M12 16h.01M12 3L2 21h20L12 3z',
   inicio:    'M3 10l9-7 9 7v10a1 1 0 01-1 1h-5v-7H9v7H4a1 1 0 01-1-1z',
   algoritmo: 'M8.5 6H15a3 3 0 010 6H9a3 3 0 000 6h6.5',
   rutas:     'M4 7h9a3 3 0 010 6H8a3 3 0 000 6h12',
@@ -54,6 +58,7 @@ export default function Sidebar({ activo, onCambiar, onOpenHelp }) {
             key={m.id}
             className={activo === m.id ? 'on' : ''}
             onClick={() => onCambiar(m.id)}
+            aria-label={m.id === 'config' && ['administrador','ti'].includes(usuario?.rol) ? 'Usuarios' : m.label}
             aria-current={activo === m.id ? 'page' : undefined}
             title={`Ir a ${m.label} (Alt + ${m.shortcut})`}
           >
@@ -63,7 +68,7 @@ export default function Sidebar({ activo, onCambiar, onOpenHelp }) {
               {m.id === 'config'     && <circle cx="12" cy="12" r="3.5" />}
               <path d={ICONOS[m.id]} />
             </svg>
-            <span>{m.label}</span>
+            <span>{m.id === 'config' && ['administrador','ti'].includes(usuario?.rol) ? 'Usuarios' : m.label}</span>
             <span className="nav-shortcut-badge" aria-hidden="true">{m.shortcut}</span>
           </button>
         ))}

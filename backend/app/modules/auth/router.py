@@ -1,3 +1,6 @@
+import hashlib
+import uuid
+from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, status, Response, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -29,7 +32,7 @@ async def login(req: LoginRequest, response: Response, request: Request, db: Asy
     # Buscar por usuario o correo sin distinguir mayúsculas
     term = req.usuario.strip().lower()
     query = select(Usuario).where(
-        (Usuario.correo.ilike(term)) | (Usuario.correo.ilike(f"{term}@%"))
+        (Usuario.correo == term) | (Usuario.nombre_usuario == term)
     )
     result = await db.execute(query)
     user = result.scalars().first()
@@ -56,13 +59,13 @@ async def login(req: LoginRequest, response: Response, request: Request, db: Asy
         "nombre": f"{user.nombre} {user.apellidos}"
     }
     access_token = crear_access_token(datos_token)
-    refresh_token = crear_refresh_token({"sub": user.id})
+    refresh_token = crear_refresh_token({"sub": user.id, "jti": uuid.uuid4().hex})
 
     # Guardar token de refresco
     t_ref = TokenRefresco(
         usuario_id=user.id,
-        hash_token=refresh_token[-32:], # Almacena hash parcial
-        expira_en=ahora()
+        hash_token=hashlib.sha256(refresh_token.encode()).hexdigest(),
+        expira_en=ahora() + timedelta(days=7)
     )
     db.add(t_ref)
 

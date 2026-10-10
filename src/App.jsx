@@ -15,99 +15,23 @@ import Registros     from './components/Registros'
 import Login         from './components/Login'
 import Modal         from './components/common/Modal'
 import HelpDrawer    from './components/common/HelpDrawer'
-import { PEDIDOS, VEHICULOS } from './data/mock'
+import { useDatos } from './context/DatosContext'
+import { apiFetch } from './api/cliente'
+import { PlanificacionPanel, UsuariosPanel, IncidenciasPanel } from './components/Operaciones'
 import { planificar, separarReprogramados, hhmm } from './lib/planner'
 import { useAuth } from './context/AuthContext'
 import { useAudit } from './context/AuditContext'
 import { useToast } from './context/ToastContext'
 
 const TITULOS = {
+  usuarios: ['Usuarios', 'Consulta y administra los datos, roles y estados de acceso.'],
   inicio:    ['Inicio',                   'Resumen de la operación del día.'],
   algoritmo: ['Algoritmo de Ruteo',       'Prueba cuántos vehículos necesita la jornada y ajusta el reparto antes de enviarlo a Rutas.'],
-  rutas:     ['Gestión de Rutas',         'Reordena paradas en vivo y recalcula lo pendiente sin tocar lo ya entregado.'],
+  rutas: ['Gestión de Rutas', 'Consulta la jornada, las entregas y las incidencias de cada ruta.'],
+  incidencias: ['Incidencias', 'Seguimiento y resolución de incidencias de reparto.'],
   cobranzas: ['Cobranzas',               'Valida los pagos del día para que el repartidor pueda avanzar al siguiente punto.'],
   config:    ['Configuración',            'Capacidad de vehículos, reglas por cliente y accesos.'],
   registros: ['Registros de Auditoría',  'Trazabilidad de cambios: reglas, rutas, aprobaciones y cobros · RF-13 · RNF-09'],
-}
-
-// ── Modal de aprobación de ruta accesible (RF-09 / WCAG) ───────
-function ModalAprobacion({ plan, usuario, onConfirmar, onCancelar }) {
-  const ahora = new Date()
-  const fecha = ahora.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' })
-  const hora  = ahora.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })
-  const totalPedidos = plan.rutas.reduce((s, r) => s + r.pedidos.length, 0)
-  const conflictos   = plan.conflictos?.length ?? 0
-
-  return (
-    <Modal
-      isOpen={true}
-      onClose={onCancelar}
-      title="Confirmar aprobación de plan"
-      subtitle="RF-09 · Esta acción queda registrada en el log de auditoría con firma de usuario"
-      maxWidth={520}
-    >
-      {/* Resumen del plan */}
-      <div className="modal-grid">
-        <div><div className="modal-lbl">Vehículos</div><div className="modal-val">{plan.n}</div></div>
-        <div><div className="modal-lbl">Pedidos asignados</div><div className="modal-val">{totalPedidos}</div></div>
-        <div><div className="modal-lbl">Jornada máxima</div><div className="modal-val" style={{ fontSize: 16 }}>{hhmm(plan.jornadaMax)}</div></div>
-        <div><div className="modal-lbl">Distancia total</div><div className="modal-val" style={{ fontSize: 16 }}>{plan.kmTotal.toFixed(1)} km</div></div>
-      </div>
-
-      {/* Quién aprueba + cuándo */}
-      <div className="modal-sep" />
-      <div className="modal-meta">
-        <div>
-          <div className="modal-lbl">Aprobado por</div>
-          <div style={{ fontWeight: 700, fontSize: 13 }}>{usuario.nombre}</div>
-          <div style={{ fontSize: 10.5, color: '#64748b', marginTop: 2 }}>{usuario.titulo}</div>
-        </div>
-        <div>
-          <div className="modal-lbl">Fecha y hora</div>
-          <div style={{ fontWeight: 700, fontSize: 13 }}>{fecha}</div>
-          <div style={{ fontSize: 10.5, color: '#64748b', marginTop: 2 }}>{hora}</div>
-        </div>
-      </div>
-
-      {/* Advertencias */}
-      {conflictos > 0 && (
-        <div className="warnbox">
-          <span>⚑</span>
-          <div><b>{conflictos} parada{conflictos > 1 ? 's' : ''} con ventana horaria en conflicto.</b> Verifica con el asistente antes de aprobar.</div>
-        </div>
-      )}
-      {plan.sinAsignar.length > 0 && (
-        <div className="warnbox">
-          <span>⚑</span>
-          <div><b>{plan.sinAsignar.length} pedido{plan.sinAsignar.length > 1 ? 's' : ''} sin asignar.</b> No entrarán en la ruta aprobada.</div>
-        </div>
-      )}
-      <div style={{ fontSize: 11.5, color: '#64748b', background: '#f8fafc', borderRadius: 8, padding: '9px 12px' }}>
-        Esta acción no puede revertirse desde esta pantalla. El plan aprobado se enviará a Rutas.
-      </div>
-
-      <div className="modal-ft" style={{ margin: '14px -22px -20px', padding: '14px 22px' }}>
-        <button className="btn out" onClick={onCancelar}>Cancelar</button>
-        <button className="btn green" onClick={() => onConfirmar(fecha, hora)}>✓ Confirmar aprobación</button>
-      </div>
-    </Modal>
-  )
-}
-
-// ── Badge de plan aprobado (RF-09) ────────────────────────────
-function AprobacionBadge({ datos }) {
-  return (
-    <div className="aprobacion-badge">
-      <span style={{ fontSize: 24 }}>✅</span>
-      <div>
-        <div style={{ fontWeight: 700, color: '#15803d', fontSize: 13 }}>Plan aprobado · Enviado a Rutas</div>
-        <div style={{ fontSize: 11, color: '#64748b', marginTop: 3 }}>
-          Aprobado por <strong>{datos.usuario}</strong> ({datos.titulo}) · {datos.fecha} {datos.hora}
-          {' '} · {datos.n} vehículos · {datos.pedidos} pedidos
-        </div>
-      </div>
-    </div>
-  )
 }
 
 // ── Placeholder de acceso denegado (RNF-02) ───────────────────
@@ -136,9 +60,14 @@ export default function App() {
 
 function AppInterna({ usuario, puede, puedeAprobar, log }) {
   const { toast } = useToast()
+  const { pedidos, vehiculos, reglas, recargar } = useDatos()
+  const VEHICULOS = useMemo(() => vehiculos.filter(v => v.activo && ['DISPONIBLE', 'ASIGNADO'].includes(v.estado)), [vehiculos])
+  const [fechaPlan, setFechaPlan] = useState('2026-10-10')
+  const [propuesta, setPropuesta] = useState(null)
+  const [gestionPlanes, setGestionPlanes] = useState(false)
 
   // Módulo inicial según rol
-  const ORDEN_MODULOS = ['inicio', 'algoritmo', 'rutas', 'cobranzas', 'config', 'registros']
+  const ORDEN_MODULOS = ['inicio', 'algoritmo', 'rutas', 'cobranzas', 'usuarios', 'config', 'registros', 'incidencias']
   const moduloInicial = ORDEN_MODULOS.find(m => puede(m)) || 'inicio'
 
   const [modulo, setModulo]         = useState(moduloInicial)
@@ -150,8 +79,6 @@ function AppInterna({ usuario, puede, puedeAprobar, log }) {
   const [calculando, setCalculando] = useState(false)
   const [helpOpen, setHelpOpen]     = useState(false)
   // RF-09: aprobación
-  const [modalAprob, setModalAprob] = useState(false)
-  const [aprobacion, setAprobacion] = useState(null)
 
   // Atajos de teclado globales (Heurística #7: Flexibilidad y eficiencia de uso)
   useEffect(() => {
@@ -173,6 +100,8 @@ function AppInterna({ usuario, puede, puedeAprobar, log }) {
           '4': 'cobranzas',
           '5': 'config',
           '6': 'registros',
+          '7': 'incidencias',
+          '8': 'usuarios',
         }
         const target = modulosMap[e.key]
         if (target && puede(target)) {
@@ -187,11 +116,11 @@ function AppInterna({ usuario, puede, puedeAprobar, log }) {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [puede, toast])
 
-  const { planificables, reprogramados } = useMemo(() => separarReprogramados(PEDIDOS), [])
+  const { planificables, reprogramados } = useMemo(() => separarReprogramados(pedidos.filter(p => p.estado === 'PENDIENTE' && p.habilitado !== false && p.fecha_corte === fechaPlan.split('-').reverse().join('/')), new Date(fechaPlan + 'T12:00:00').getDay()), [pedidos, fechaPlan])
 
   const escenarios = useMemo(
-    () => tamanos.map((n) => planificar(planificables, n)),
-    [planificables, tamanos]
+    () => (VEHICULOS.length < 3 ? [Math.max(1, VEHICULOS.length)] : tamanos.filter(n => n <= VEHICULOS.length)).map((n) => planificar(planificables, n, VEHICULOS)),
+    [planificables, tamanos, VEHICULOS]
   )
 
   const plan = escenarios.find((e) => e.n === seleccion) ?? escenarios[0]
@@ -215,15 +144,23 @@ function AppInterna({ usuario, puede, puedeAprobar, log }) {
   }
 
   const descartarPlan = () => {
-    setAprobacion(null)
     setSeleccion(5)
     log(usuario, 'Algoritmo', 'Descartó plan de ruteo', 'Se restableció el escenario a la configuración estándar de 5 vehículos')
     toast.info('Plan descartado. Escenario restablecido a valores por defecto.')
   }
 
-  const guardarBorrador = () => {
-    log(usuario, 'Algoritmo', 'Guardó borrador de plan', `Escenario con ${plan.n} vehículos y ${plan.rutas.reduce((s, r) => s + r.pedidos.length, 0)} pedidos guardado como borrador`)
-    toast.success(`Borrador del escenario de ${plan.n} vehículos guardado exitosamente.`)
+  const guardarBorrador = async () => {
+    try {
+      if (!plan.rutas.length) throw new Error('No hay vehículos operativos para generar la propuesta.')
+      const result = await apiFetch('/planificaciones', { method: 'POST', body: JSON.stringify({
+        fecha: fechaPlan.split('-').reverse().join('/'),
+        vehiculo_ids: plan.rutas.map(r => Number(r.vehiculo.id)),
+        parametros: { criterio, turno, jornadaMax }
+      }) })
+      setPropuesta({ id: result.planificacion_id, n: result.version_numero })
+      setGestionPlanes(true); recargar()
+      toast.success('Propuesta guardada. Revisa el resultado del motor y asigna sus repartidores antes de confirmar.')
+    } catch (err) { toast.error(err.message) }
   }
 
   const agregarEscenario = () => {
@@ -236,38 +173,6 @@ function AppInterna({ usuario, puede, puedeAprobar, log }) {
     toast.info(`Añadido escenario con ${siguiente} vehículos.`)
   }
 
-  // RF-09: confirmar aprobación y persistir en backend
-  const confirmarAprobacion = async (fecha, hora) => {
-    const totalPedidos = plan.rutas.reduce((s, r) => s + r.pedidos.length, 0)
-    const datos = { usuario: usuario.nombre, titulo: usuario.titulo, fecha, hora, n: plan.n, pedidos: totalPedidos }
-    setAprobacion(datos)
-    setModalAprob(false)
-
-    // Persistir plan y versión en la base de datos real
-    try {
-      const token = localStorage.getItem('siprd_access_token')
-      const vehiculoIds = plan.rutas.map(r => String(r.vehiculo?.id || r.id_vehiculo || 'v1'))
-      await fetch('/api/v1/planificaciones', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify({
-          fecha: '27/08/2026',
-          vehiculo_ids: vehiculoIds,
-          parametros: { criterio, turno, jornadaMax }
-        })
-      })
-    } catch (err) {
-      console.warn('Sincronización de plan con backend:', err)
-    }
-
-    log(usuario, 'Algoritmo', 'Aprobó plan de ruteo',
-      `${plan.n} vehículos · ${totalPedidos} pedidos · jornada máx. ${hhmm(plan.jornadaMax)} · ${plan.kmTotal.toFixed(1)} km`)
-    toast.success(`Plan aprobado y registrado en la base de datos: ${plan.n} vehículos y ${totalPedidos} pedidos listos para despacho.`)
-  }
-
   const [titulo, subtitulo] = TITULOS[modulo] ?? ['', '']
 
   return (
@@ -275,15 +180,9 @@ function AppInterna({ usuario, puede, puedeAprobar, log }) {
       {/* Centro de Ayuda y Heurísticas (Heurística #10) */}
       <HelpDrawer isOpen={helpOpen} onClose={() => setHelpOpen(false)} />
 
-      {/* Modal de aprobación */}
-      {modalAprob && (
-        <ModalAprobacion
-          plan={plan}
-          usuario={usuario}
-          onConfirmar={confirmarAprobacion}
-          onCancelar={() => setModalAprob(false)}
-        />
-      )}
+      <Modal isOpen={gestionPlanes} onClose={() => setGestionPlanes(false)} title="Propuestas y aprobación de rutas" maxWidth={1120}>
+        {gestionPlanes && <PlanificacionPanel inicial={propuesta} fechaInicial={fechaPlan} />}
+      </Modal>
 
       <Sidebar activo={modulo} onCambiar={setModulo} onOpenHelp={() => setHelpOpen(true)} />
 
@@ -297,6 +196,7 @@ function AppInterna({ usuario, puede, puedeAprobar, log }) {
         {modulo === 'algoritmo' && (puede('algoritmo') ? (
           <>
             <ParamsBar
+              fecha={fechaPlan} setFecha={setFechaPlan} totalReglas={reglas.length}
               criterio={criterio} setCriterio={setCriterio}
               turno={turno} setTurno={setTurno}
               jornadaMax={jornadaMax} setJornadaMax={setJornadaMax}
@@ -315,7 +215,7 @@ function AppInterna({ usuario, puede, puedeAprobar, log }) {
             />
 
             <div className="split">
-              <OrdersPanel plan={plan} reprogramados={reprogramados} />
+              <OrdersPanel plan={plan} reprogramados={reprogramados} noPlanificables={pedidos.filter(p => p.estado === 'PENDIENTE' && p.habilitado === false).map(p => ({...p,motivo:'Pedido no habilitado',detalle:'Requiere revisión antes de planificar'}))} />
               <ErrorBoundary>
                 <RouteMap plan={plan} />
               </ErrorBoundary>
@@ -346,26 +246,24 @@ function AppInterna({ usuario, puede, puedeAprobar, log }) {
                   </div>
                 )}
                 <div className="n">
-                  Última optimización: 27/08/2026, 08:45 a.m. · Criterio:{' '}
+                  Vista previa de flota · {fechaPlan.split('-').reverse().join('/')} · Criterio:{' '}
                   {criterio === 'jornada' ? 'balancear jornada' : 'menor distancia'} · Turno{' '}
-                  {turno === 'dia' ? 'día' : 'noche'} · Motor: heurística + genético
+                  {turno === 'dia' ? 'día' : 'noche'} · Revisa la propuesta guardada antes de aprobar
                 </div>
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'flex-end' }}>
                 {/* RF-09: badge o botones de aprobación */}
-                {aprobacion ? (
-                  <AprobacionBadge datos={aprobacion} />
-                ) : (
                   <div className="btns">
+                    <button className="btn out" onClick={() => { setPropuesta(null); setGestionPlanes(true) }}>Propuestas guardadas</button>
                     <button type="button" className="btn out" onClick={descartarPlan} title="Restablecer escenario por defecto">
                       Descartar plan
                     </button>
-                    <button type="button" className="btn out" onClick={guardarBorrador} title="Guardar cambios temporalmente">
+                    <button type="button" className="btn out" onClick={guardarBorrador} title="Generar y guardar una propuesta en la base de datos">
                       Guardar como borrador
                     </button>
                     {puedeAprobar() ? (
-                      <button className="btn green" onClick={() => setModalAprob(true)}>
+                      <button className="btn green" onClick={() => { setPropuesta(null); setGestionPlanes(true) }}>
                         ✓ Aprobar y enviar a Rutas
                       </button>
                     ) : (
@@ -374,7 +272,6 @@ function AppInterna({ usuario, puede, puedeAprobar, log }) {
                       </button>
                     )}
                   </div>
-                )}
               </div>
             </div>
           </>
@@ -388,6 +285,8 @@ function AppInterna({ usuario, puede, puedeAprobar, log }) {
 
         {/* ── Configuración ──────────────── */}
         {modulo === 'config' && (puede('config') ? <Configuracion /> : <AccesoDenegado />)}
+        {modulo === 'usuarios' && (puede('usuarios') ? <UsuariosPanel /> : <AccesoDenegado />)}
+        {modulo === 'incidencias' && (puede('incidencias') ? <IncidenciasPanel /> : <AccesoDenegado />)}
 
         {/* ── Registros de auditoría ─────── */}
         {modulo === 'registros' && (puede('registros') ? <Registros /> : <AccesoDenegado />)}

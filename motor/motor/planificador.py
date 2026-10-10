@@ -1,4 +1,5 @@
 import time
+from datetime import datetime
 from typing import List, Dict, Any
 from motor.motor.modelos import InstanciaVRP, SolucionVRP, RutaResultado, NoAsignadoResultado, Punto
 from motor.motor.matriz import matriz_distancias_tiempos
@@ -17,7 +18,8 @@ def optimizar_vrp(instancia: InstanciaVRP, metodo: str = "HIBRIDO") -> SolucionV
     # 1. Prefiltrar pedidos
     pedidos_aptos, no_asignados_prefiltro = prefiltrar_pedidos(
         instancia.pedidos,
-        instancia.vehiculos
+        instancia.vehiculos,
+        dia_semana=(datetime.strptime(instancia.fecha,"%d/%m/%Y").weekday()+1)%7
     )
 
     if not pedidos_aptos or not instancia.vehiculos:
