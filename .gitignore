@@ -57,6 +57,7 @@ __pycache__/
 env/
 venv/
 .venv/
+.local/
 *.db
 *.sqlite3
 

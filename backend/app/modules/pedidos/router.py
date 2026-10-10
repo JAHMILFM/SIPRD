@@ -3,7 +3,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from pydantic import BaseModel
 from typing import Optional, List
-from datetime import date
+from datetime import date, datetime
+import math
 from backend.app.core.db import get_db
 from backend.app.core.seguridad import require_roles
 from backend.app.core.errores import ErrorNoEncontrado, ErrorReglaNegocio
@@ -76,6 +77,10 @@ async def importar_corte(
     Importa pedidos para una fecha de corte (RF-INT-01).
     Idempotente por codigo_externo. Valida datos y rechaza inválidos con su motivo.
     """
+    try:
+        fecha_programada = datetime.strptime(req.fecha_corte, "%d/%m/%Y").date() if "/" in req.fecha_corte else date.fromisoformat(req.fecha_corte)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Fecha de corte invalida; use DD/MM/AAAA o AAAA-MM-DD")
     datos = req.pedidos_datos or []
     
     total_leidos = len(datos)
@@ -84,10 +89,10 @@ async def importar_corte(
     detalle_errores = []
 
     importacion = ImportacionPedidos(
-        fecha_corte=req.fecha_corte,
-        origen=req.origen,
-        iniciada_por=usuario["sub"],
-        total_leidos=total_leidos,
+        nombre_archivo=f"{req.origen}-{fecha_programada.isoformat()}",
+        importado_por=usuario["sub"],
+        filas_totales=total_leidos,
+        filas_validas=0,
         estado="EN_PROCESO"
     )
     db.add(importacion)
@@ -101,31 +106,36 @@ async def importar_corte(
             continue
 
         # Validar peso y volumen
-        peso = float(item.get("peso_kg") or item.get("peso") or 0)
-        vol = float(item.get("volumen_m3") or item.get("vol") or 0)
-        if peso <= 0 or vol <= 0:
+        try:
+            peso = float(item.get("peso_kg") or item.get("peso") or 0)
+            vol = float(item.get("volumen_m3") or item.get("vol") or 0)
+            importe = float(item.get("importe") or item.get("importe_total") or 150.0)
+            lat = float(item.get("lat") if item.get("lat") is not None else -12.0464)
+            lon = float(item.get("lon") if item.get("lon") is not None else -77.0428)
+            validos = all(math.isfinite(v) for v in (peso, vol, importe, lat, lon)) and importe >= 0 and -90 <= lat <= 90 and -180 <= lon <= 180
+        except (ValueError, TypeError):
+            validos = False
+        if not validos or peso <= 0 or vol <= 0:
             total_rechazados += 1
-            detalle_errores.append({"codigo": cod, "motivo": "Peso o volumen menor o igual a cero"})
+            detalle_errores.append({"codigo": cod, "motivo": "Peso, volumen, importe o coordenadas invalidos"})
             continue
 
         # Buscar o registrar cliente
         nombre_cli = item.get("cliente") or item.get("nombre_cliente") or f"Cliente {cod}"
         dir_cli = item.get("dir") or item.get("direccion") or "Lima Metropolitana"
         dist_cli = item.get("dist") or item.get("distrito") or "Lima"
-        lat = float(item.get("lat") or -12.0464)
-        lon = float(item.get("lon") or -77.0428)
 
         # Buscar cliente existente por nombre o código
-        cli_q = await db.execute(select(Cliente).where(Cliente.nombre == nombre_cli))
+        cli_q = await db.execute(select(Cliente).where(Cliente.razon_social == nombre_cli))
         cliente = cli_q.scalars().first()
         if not cliente:
             cliente = Cliente(
                 codigo_externo=f"CLI-{cod}",
-                nombre=nombre_cli,
+                razon_social=nombre_cli,
                 direccion=dir_cli,
                 distrito=dist_cli,
-                lat=lat,
-                lon=lon
+                latitud=lat,
+                longitud=lon
             )
             db.add(cliente)
             await db.flush()
@@ -140,20 +150,21 @@ async def importar_corte(
         nuevo_pedido = Pedido(
             codigo_externo=cod,
             cliente_id=cliente.id,
-            fecha_corte=req.fecha_corte,
+            fecha_programada=fecha_programada,
+            origen=req.origen,
             peso_kg=peso,
             volumen_m3=vol,
-            importe_total=float(item.get("importe") or item.get("importe_total") or 150.0),
+            importe=importe,
             tiempo_servicio_min=int(item.get("tiempo_servicio_min") or item.get("servicio") or 15),
             estado="PENDIENTE",
-            importacion_id=importacion.id
         )
         db.add(nuevo_pedido)
+        await db.flush()
         total_nuevos += 1
 
-    importacion.total_nuevos = total_nuevos
-    importacion.total_rechazados = total_rechazados
-    importacion.detalle_errores = detalle_errores
+    importacion.filas_validas = total_nuevos
+    importacion.filas_con_error = total_rechazados
+    importacion.errores = detalle_errores
     importacion.estado = "COMPLETADA"
 
     await registrar_auditoria(

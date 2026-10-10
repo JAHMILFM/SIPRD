@@ -224,6 +224,18 @@ async def sembrar_datos_iniciales(db: AsyncSession):
             valor_nuevo={"descripcion": "Base de datos inicializada y alineada con siprd_db.backup"}
         ))
 
+    await db.flush()
+    if SCHEMA:
+        # Los datos iniciales usan IDs explicitos: avanzar las secuencias evita
+        # colisiones al registrar el siguiente usuario, cliente o pedido.
+        for table in Base.metadata.sorted_tables:
+            for column in table.primary_key.columns:
+                if column.autoincrement is True:
+                    qualified = f'{table.schema}.{table.name}'
+                    await db.execute(text(
+                        f"SELECT setval(pg_get_serial_sequence('{qualified}', '{column.name}'), "
+                        f"COALESCE(MAX({column.name}), 1), COUNT(*) > 0) FROM {qualified}"
+                    ))
     await db.commit()
 
 

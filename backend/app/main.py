@@ -84,7 +84,7 @@ async def salud():
         "entorno": settings.ENTORNO
     }
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from backend.app.models import Usuario
 
 @app.get("/listo", tags=["Sistema"])
@@ -92,7 +92,9 @@ async def listo():
     try:
         async with AsyncSessionLocal() as session:
             await session.execute(select(Usuario).limit(1))
-        return {"estado": "LISTO", "bd": "CONECTADA"}
+            motor = session.bind.dialect.name
+            database = (await session.execute(text("SELECT current_database()"))).scalar_one() if motor == "postgresql" else "sqlite"
+        return {"estado": "LISTO", "bd": "CONECTADA", "motor": motor, "base_datos": database}
     except Exception as e:
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

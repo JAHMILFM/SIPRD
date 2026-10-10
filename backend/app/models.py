@@ -2,14 +2,24 @@ import uuid
 from datetime import datetime, date, time
 from typing import Optional
 from sqlalchemy import (
-    Column, String, Boolean, Float, Integer, BigInteger, SmallInteger,
+    Column, String, Boolean, Float, Integer, BigInteger as SQLBigInteger, SmallInteger,
     DateTime, Date, Time, Text, ForeignKey, JSON, Numeric
 )
+from sqlalchemy.types import TypeDecorator
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.hybrid import hybrid_property
 from backend.app.core.db import Base
 from backend.app.core.config import settings
 from backend.app.core.tiempo import ahora
+
+class BigInteger(TypeDecorator):
+    """Acepta identificadores numericos serializados como texto por la API."""
+    impl = SQLBigInteger
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        return int(value) if value is not None else None
+
 
 # Si conectamos a PostgreSQL, usamos el esquema 'siprd' formal del backup
 SCHEMA = "siprd" if "postgresql" in settings.DATABASE_URL else None

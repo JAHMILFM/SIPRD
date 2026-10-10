@@ -153,6 +153,36 @@ siprd-frontend/
 
 ## Instalación y ejecución
 
+En Windows, ejecutar `iniciar_sistema.bat` desde la carpeta del proyecto. El
+lanzador usa `.venv`, instala las dependencias que falten y espera a que respondan
+el motor (8001), el backend (8000) y el frontend (5173). Los procesos se ejecutan
+en segundo plano y sus errores quedan en `.local/logs/`.
+
+Requisitos: Python 3.12 o 3.13 y Node.js 18 o posterior con npm. La primera
+instalación requiere internet. Sin `.env`, el backend utiliza la base SQLite de
+desarrollo `backend/siprd_dev.db` y carga sus datos de demostración al arrancar.
+Si ya existe `.env`, se respeta su conexión configurada; no se reemplaza por el
+ejemplo de PostgreSQL para un arranque local.
+
+Para iniciar manualmente, desde la raíz del proyecto:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r backend/requirements.txt
+npm.cmd ci
+# Ejecutar cada servicio en una terminal diferente, siempre desde esta carpeta:
+.\.venv\Scripts\python.exe -m uvicorn motor.api.main:app --host 127.0.0.1 --port 8001
+.\.venv\Scripts\python.exe -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
+npm.cmd run dev
+```
+
+Verificación: `http://127.0.0.1:8001/salud` comprueba el motor y
+`http://127.0.0.1:8000/listo` comprueba el backend y su base de datos.
+La interfaz se abre en `http://localhost:5173/`. `npm run dev` por sí solo inicia
+únicamente el frontend; el inicio de sesión y las operaciones API necesitan el backend.
+
+Comandos del frontend:
+
 ```bash
 # Clonar el repositorio desde GitHub
 git clone https://github.com/JAHMILFM/SIPRD.git
