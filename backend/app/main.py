@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 import time
 from contextlib import asynccontextmanager
@@ -7,7 +8,7 @@ from fastapi.responses import JSONResponse
 from backend.app.core.config import settings
 from backend.app.core.errores import ErrorDominio, manejador_error_dominio
 from backend.app.core.logging import configurar_logging, logger
-from backend.app.core.db import engine, Base, AsyncSessionLocal
+from backend.app.core.db import engine, AsyncSessionLocal
 from backend.app.seed import inicializar_bd
 
 # Importar routers modulares
@@ -22,8 +23,10 @@ from backend.app.modules.reparto.router import router as reparto_router
 from backend.app.modules.incidencias.router import router as incidencias_router
 from backend.app.modules.cobranzas.router import router as cobranzas_router
 from backend.app.modules.auditoria.router import router as auditoria_router
+from backend.app.modules.reparto.accesos import router as accesos_router
 
 configurar_logging()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -31,16 +34,40 @@ async def lifespan(app: FastAPI):
     logger.info("Iniciando SIPRD Backend y verificando base de datos...")
     await inicializar_bd()
     logger.info("Esquema de base de datos verificado.")
+
+    async def rotacion_diaria():
+        from backend.app.core.reparto import asegurar_accesos, LIMA
+        from datetime import datetime, timedelta
+
+        while True:
+            try:
+                async with AsyncSessionLocal() as db:
+                    await asegurar_accesos(db, datetime.now(LIMA).date())
+                    await db.commit()
+            except Exception:
+                logger.warning(
+                    "No se pudo actualizar el acceso de jornada; se reintentará."
+                )
+            siguiente = (datetime.now(LIMA) + timedelta(days=1)).replace(hour=0, minute=0, second=2, microsecond=0)
+            await asyncio.sleep(max(1, (siguiente - datetime.now(LIMA)).total_seconds()))
+
+    tarea = asyncio.create_task(rotacion_diaria())
     yield
+    tarea.cancel()
+    try:
+        await tarea
+    except asyncio.CancelledError:
+        pass
     # Limpieza al cerrar
     await engine.dispose()
     logger.info("SIPRD Backend apagado ordenadamente.")
+
 
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.VERSION,
     description="API Monolítica Modular Hexagonal de SIPRD (Alfa Distribuidores S.A.)",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 # CORS
@@ -51,6 +78,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 # Middleware de request_id y structlog
 @app.middleware("http")
@@ -66,12 +94,14 @@ async def structlog_middleware(request: Request, call_next):
         ruta=request.url.path,
         status=response.status_code,
         duracion_ms=round(duracion * 1000, 2),
-        request_id=request_id
+        request_id=request_id,
     )
     return response
 
+
 # Manejador global de excepciones de dominio
 app.add_exception_handler(ErrorDominio, manejador_error_dominio)
+
 
 # Liveness y Readiness
 @app.get("/salud", tags=["Sistema"])
@@ -81,11 +111,13 @@ async def salud():
         "estado": "OK",
         "sistema": "SIPRD API",
         "version": settings.VERSION,
-        "entorno": settings.ENTORNO
+        "entorno": settings.ENTORNO,
     }
+
 
 from sqlalchemy import select
 from backend.app.models import Usuario
+
 
 @app.get("/listo", tags=["Sistema"])
 async def listo():
@@ -93,11 +125,15 @@ async def listo():
         async with AsyncSessionLocal() as session:
             await session.execute(select(Usuario).limit(1))
         return {"estado": "LISTO", "bd": "CONECTADA"}
-    except Exception as e:
+    except Exception:
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            content={"estado": "NO_LISTO", "detalle": str(e)}
+            content={
+                "estado": "NO_LISTO",
+                "detalle": "No se pudo verificar la conexión con PostgreSQL.",
+            },
         )
+
 
 # Montar routers bajo /api/v1
 app.include_router(auth_router, prefix="/api/v1")
@@ -111,7 +147,9 @@ app.include_router(reparto_router, prefix="/api/v1")
 app.include_router(incidencias_router, prefix="/api/v1")
 app.include_router(cobranzas_router, prefix="/api/v1")
 app.include_router(auditoria_router, prefix="/api/v1")
+app.include_router(accesos_router, prefix="/api/v1")
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run("backend.app.main:app", host="127.0.0.1", port=8000, reload=True)

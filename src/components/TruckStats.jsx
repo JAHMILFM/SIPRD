@@ -18,7 +18,7 @@ export default function TruckStats({ plan, jornadaMax }) {
   const holgada = rutas.reduce((a, b) => (a && a.minutos < b.minutos ? a : b), null)
   const cargada = rutas.reduce((a, b) => (a && a.minutos > b.minutos ? a : b), null)
   const sugerencia =
-    holgada && cargada && cargada.minutos - holgada.minutos > 90
+    holgada && cargada && cargada.minutos - holgada.minutos > 90 && cargada.zona === holgada.zona
       ? `${holgada.id} tiene ${hhmm(limite - holgada.minutos)} libres. Puedes moverle paradas desde ${cargada.id} antes de enviar.`
       : 'La carga está distribuida de forma equilibrada entre los camiones del escenario.'
 

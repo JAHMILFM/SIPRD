@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 
+
 class Punto(BaseModel):
     id: str
     lat: float
@@ -9,10 +10,12 @@ class Punto(BaseModel):
     tiempo_servicio_min: int = 15
     peso_kg: float = 0.0
     volumen_m3: float = 0.0
-    ventana_inicio: Optional[str] = None # "09:00"
-    ventana_fin: Optional[str] = None    # "13:00"
+    ventana_inicio: Optional[str] = None  # "09:00"
+    ventana_fin: Optional[str] = None  # "13:00"
     prioridad: Optional[str] = "Media"
-    dias_permitidos: Optional[List[int]] = None # [1, 2, 3, 4, 5]
+    dias_permitidos: Optional[List[int]] = None  # [1, 2, 3, 4, 5]
+    intervalos_recepcion: Optional[List[List[int]]] = None
+
 
 class VehiculoVRP(BaseModel):
     id: str
@@ -20,15 +23,20 @@ class VehiculoVRP(BaseModel):
     capacidad_peso_kg: float
     capacidad_volumen_m3: float
     inicio_jornada: str = "07:30"
-    fin_jornada: str = "17:30"
+    fin_jornada: str = "15:30"
     costo_fijo: float = 50.0
 
+
 class InstanciaVRP(BaseModel):
+    criterio: str = "distancia"
     fecha: str
     deposito: Punto
     pedidos: List[Punto]
     vehiculos: List[VehiculoVRP]
-    velocidad_kmh: float = 20.0 # Velocidad urbana promedio en Lima
+    velocidad_kmh: float = 20.0  # Velocidad urbana promedio en Lima
+    matriz_distancias: Optional[List[List[float]]] = None
+    matriz_tiempos: Optional[List[List[float]]] = None
+
 
 class ParadaResultado(BaseModel):
     secuencia: int
@@ -41,7 +49,9 @@ class ParadaResultado(BaseModel):
     lat: float
     lon: float
 
+
 class RutaResultado(BaseModel):
+    zona_operativa: Optional[str] = None
     ruta_id: str
     vehiculo_id: str
     placa: str
@@ -55,10 +65,12 @@ class RutaResultado(BaseModel):
     utilizacion_peso_pct: float
     utilizacion_vol_pct: float
 
+
 class NoAsignadoResultado(BaseModel):
     pedido_id: str
     codigo: str
     motivo: str
+
 
 class SolucionVRP(BaseModel):
     metodo: str

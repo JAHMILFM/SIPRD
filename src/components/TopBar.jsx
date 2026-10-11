@@ -1,4 +1,5 @@
-import { FECHA, ALMACEN } from '../data/mock'
+import { ALMACEN } from '../data/mock'
+import {useOperacion} from '../context/OperacionContext'
 import { useToast } from '../context/ToastContext'
 
 /**
@@ -6,6 +7,7 @@ import { useToast } from '../context/ToastContext'
  * y acceso directo a la Guía y Atajos (Heurística #10).
  */
 export default function TopBar({ titulo, subtitulo, usuario, onOpenHelp }) {
+  const {fecha,setFecha,online}=useOperacion()
   const { toast } = useToast()
 
   const partesNombre = usuario?.nombre ? usuario.nombre.split(' ') : ['Usuario']
@@ -25,11 +27,11 @@ export default function TopBar({ titulo, subtitulo, usuario, onOpenHelp }) {
       <div className="tools">
         {/* Estado del sistema en vivo (Heurística #1) */}
         <div className="ctl" title="Conexión en tiempo real activa">
-          <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#16a34a', display: 'inline-block' }} />
-          <span style={{ fontSize: 11, fontWeight: 600, color: '#166534' }}>En línea</span>
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: online?'#16a34a':'#DC2626', display: 'inline-block' }} />
+          <span style={{ fontSize: 11, fontWeight: 600, color: '#166534' }}>{online?'En línea':'Sin conexión'}</span>
         </div>
 
-        <div className="ctl" title="Fecha operativa">📅 {FECHA}</div>
+        <div className="ctl" title="Fecha operativa">📅 <input aria-label="Fecha operativa" type="date" value={fecha} onChange={e=>setFecha(e.target.value)} style={{border:0,background:'transparent',font:'inherit',color:'inherit'}}/></div>
         <div className="ctl" title="Centro de distribución">📍 {ALMACEN}</div>
 
         {/* Botón de Ayuda y Heurísticas (Heurística #10) */}
@@ -49,11 +51,11 @@ export default function TopBar({ titulo, subtitulo, usuario, onOpenHelp }) {
         <button
           type="button"
           className="bell"
-          onClick={() => toast.info('8 alertas operativas: 3 cobros por validar, 1 conflicto de ventana horaria y 4 reprogramaciones.', { duration: 4500 })}
-          title="8 alertas operativas pendientes"
-          aria-label="8 alertas operativas pendientes"
+          onClick={() => toast.info('Consulte las incidencias y pagos pendientes de la jornada.', {duration:4500})}
+          title="Consultar alertas operativas"
+          aria-label="Consultar alertas operativas"
         >
-          <span className="bdg">8</span>
+
           <span aria-hidden="true">🔔</span>
         </button>
 

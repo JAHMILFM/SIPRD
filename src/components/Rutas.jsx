@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
-import { RUTAS_ACTIVAS } from '../data/mockRutas'
+import {useOperacion} from '../context/OperacionContext'
+import {apiFetch} from '../api/cliente'
+import {planUI} from '../lib/adaptadores'
 import { useAuth } from '../context/AuthContext'
 import { useAudit } from '../context/AuditContext'
 import { useToast } from '../context/ToastContext'
@@ -41,6 +43,9 @@ function chipEstado(estado, bloqueado) {
 
 export default function Rutas() {
   const { usuario } = useAuth()
+  const operacion=useOperacion()
+  const RUTAS_ACTIVAS=operacion.rutas
+  const [ocupado,setOcupado]=useState(false)
   const { log }     = useAudit()
   const { toast }   = useToast()
 
@@ -59,129 +64,45 @@ export default function Rutas() {
   const [guardado, setGuardado]     = useState(false)
   const [filtroEstado, setFiltroEstado] = useState('todos') // 'todos' | 'pendiente' | 'en_camino' | 'entregado'
 
+  useEffect(()=>{setRutas(RUTAS_ACTIVAS);setRutaActiva(prev=>RUTAS_ACTIVAS.some(r=>r.id===prev)?prev:RUTAS_ACTIVAS[0]?.id)},[operacion.plan,operacion.pedidos,operacion.vehiculos])
   const ruta = rutas.find(r => r.id === rutaActiva) ?? rutas[0]
 
-  // ── helpers con soporte de Deshacer (Heurística #3) ───────────
-  const mutarRuta = (fn) => {
-    setRutas(prev =>
-      prev.map(r => r.id === rutaActiva ? { ...r, paradas: fn(r.paradas) } : r)
-    )
-    setGuardado(false)
+  const persistir=async(nuevas)=>{
+    if(ocupado)return
+    setOcupado(true)
+    try{
+      const raw=await apiFetch(`/planificaciones/${operacion.plan.id}/distribucion`,{method:'PUT',body:JSON.stringify({rutas:nuevas.map(r=>({id_ruta:r.id,parada_ids:r.paradas.map(p=>p.id)}))})})
+      operacion.setPlan(raw);setRutas(planUI(raw,operacion.vehiculos,operacion.pedidos).rutas);setGuardado(true)
+      toast.success('Orden y horarios guardados en la base de datos.')
+    }catch(e){toast.error(e.message)}finally{setOcupado(false)}
   }
-
-  const subir = (paradaId) => {
-    const estadoPrevio = [...ruta.paradas]
-    let logP = null
-    let oldPos = 0
-    let newPos = 0
-
-    mutarRuta(ps => {
-      const idx = ps.findIndex(p => p.id === paradaId)
-      // No mover si es primera o si la parada anterior ya fue entregada
-      if (idx <= 0 || esEntregada(ps[idx - 1])) return ps
-      logP = ps[idx]
-      oldPos = idx + 1
-      newPos = idx
-      const a = [...ps];
-      [a[idx - 1], a[idx]] = [a[idx], a[idx - 1]]
-      return a.map((p, i) => ({ ...p, orden: i + 1, secuencia: i + 1 }))
-    })
-
-    if (logP) {
-      log(usuario, 'Rutas', 'Reordenó parada (subió)', `${logP.cliente} · ${rutaActiva}`, { entidad: 'paradas_ruta', id_entidad: logP.id_parada ?? oldPos, accion_db: 'ACTUALIZAR' })
-      toast.info(`Parada #${oldPos} (${logP.cliente}) movida a posición #${newPos}`, {
-        duration: 5000,
-        action: {
-          label: 'Deshacer',
-          onClick: () => {
-            mutarRuta(() => estadoPrevio)
-            toast.success('Reordenamiento revertido.')
-          }
-        }
-      })
-    }
+  const mover=(id,delta)=>{
+    if(ocupado)return
+    const pos=ruta.paradas.findIndex(p=>p.id===id),dest=pos+delta
+    if(dest<0||dest>=ruta.paradas.length)return
+    const fijo=p=>p.bloqueado||['entregado','en_camino'].includes(p.estado)
+    if(fijo(ruta.paradas[pos])||fijo(ruta.paradas[dest])){toast.warning('No se pueden mover paradas atendidas, en camino o bloqueadas.');return}
+    const ps=[...ruta.paradas];[ps[pos],ps[dest]]=[ps[dest],ps[pos]]
+    persistir(rutas.map(r=>r.id===ruta.id?{...r,paradas:ps.map((p,i)=>({...p,orden:i+1,secuencia:i+1}))}:r))
   }
-
-  const bajar = (paradaId) => {
-    const estadoPrevio = [...ruta.paradas]
-    let logP = null
-    let oldPos = 0
-    let newPos = 0
-
-    mutarRuta(ps => {
-      const idx = ps.findIndex(p => p.id === paradaId)
-      // No mover si es la última o si la parada posterior está bloqueada/entregada
-      if (idx < 0 || idx >= ps.length - 1 || esEntregada(ps[idx + 1])) return ps
-      logP = ps[idx]
-      oldPos = idx + 1
-      newPos = idx + 2
-      const a = [...ps];
-      [a[idx], a[idx + 1]] = [a[idx + 1], a[idx]]
-      return a.map((p, i) => ({ ...p, orden: i + 1, secuencia: i + 1 }))
-    })
-
-    if (logP) {
-      log(usuario, 'Rutas', 'Reordenó parada (bajó)', `${logP.cliente} · ${rutaActiva}`, { entidad: 'paradas_ruta', id_entidad: logP.id_parada ?? oldPos, accion_db: 'ACTUALIZAR' })
-      toast.info(`Parada #${oldPos} (${logP.cliente}) movida a posición #${newPos}`, {
-        duration: 5000,
-        action: {
-          label: 'Deshacer',
-          onClick: () => {
-            mutarRuta(() => estadoPrevio)
-            toast.success('Reordenamiento revertido.')
-          }
-        }
-      })
-    }
+  const subir=id=>mover(id,-1),bajar=id=>mover(id,1)
+  const toggleBloqueo=async(id)=>{
+    const p=ruta.paradas.find(x=>x.id===id)
+    try{await apiFetch(`/planificaciones/${operacion.plan.id}/paradas/${id}/bloqueo`,{method:'PUT',body:JSON.stringify({bloqueada:!p.bloqueado})});await operacion.refresh();toast.success('Bloqueo guardado.')}catch(e){toast.error(e.message)}
   }
-
-  const toggleBloqueo = (id) => {
-    let paradaMod = null
-    let bloqueadoPrev = false
-
-    mutarRuta(ps => ps.map(p => {
-      if (p.id === id) {
-        paradaMod = p
-        bloqueadoPrev = p.bloqueado
-        return { ...p, bloqueado: !p.bloqueado }
-      }
-      return p
-    }))
-
-    if (paradaMod) {
-      const nuevoEstado = !bloqueadoPrev
-      log(usuario, 'Rutas', nuevoEstado ? 'Bloqueó parada' : 'Desbloqueó parada', `${paradaMod.cliente} · ${rutaActiva}`)
-      toast.warning(
-        nuevoEstado
-          ? `Parada de ${paradaMod.cliente} bloqueada para el repartidor.`
-          : `Parada de ${paradaMod.cliente} desbloqueada.`,
-        {
-          duration: 5000,
-          action: {
-            label: 'Deshacer',
-            onClick: () => {
-              mutarRuta(ps => ps.map(p => p.id === id ? { ...p, bloqueado: bloqueadoPrev } : p))
-              toast.info('Cambio de bloqueo revertido.')
-            }
-          }
-        }
-      )
-    }
+  const guardar=()=>persistir(rutas)
+  const recalcularPendientes=async()=>{
+    if(ocupado)return
+    setOcupado(true)
+    try{
+      const propuesta=await apiFetch('/planificaciones',{method:'POST',body:JSON.stringify({fecha:operacion.fecha,replanificar_id:operacion.plan.id,vehiculo_ids:rutas.map(r=>r.vehiculo.id),parametros:operacion.plan.parametros})})
+      operacion.setPlan(propuesta);setGuardado(false);toast.success('Nueva versión calculada. Revísela y confírmela antes de publicarla.')
+    }catch(e){toast.error(e.message)}finally{setOcupado(false)}
   }
-
-  const guardar = () => {
-    setGuardado(true)
-    log(usuario, 'Rutas', 'Guardó cambios de ruta', `Ruta ${rutaActiva} sincronizada con App de Distribución`)
-    toast.success(`Ruta ${rutaActiva} sincronizada con éxito con la App de los repartidores.`)
+  const confirmar=async()=>{
+    try{const raw=await apiFetch(`/planificaciones/${operacion.plan.id}/confirmar`,{method:'POST'});operacion.setPlan(raw);toast.success('Nueva versión confirmada.')}catch(e){toast.error(e.message)}
   }
-
-  const recalcularPendientes = () => {
-    toast.info('Recalculando secuencia óptima para las paradas pendientes…', { duration: 1500 })
-    if (recalcTimerRef.current) clearTimeout(recalcTimerRef.current)
-    recalcTimerRef.current = setTimeout(() => {
-      toast.success('Secuencia de paradas pendientes optimizada respetando las entregas realizadas.')
-    }, 1500)
-  }
+  if(!ruta)return <div className="card" style={{padding:20}}>No hay rutas guardadas para la fecha seleccionada.</div>
 
   // ── Métricas y filtrado (Soporte dual interfaz y esquema siprd) ──
   const ent = ruta.paradas.filter(esEntregada).length
@@ -200,6 +121,7 @@ export default function Rutas() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
 
+      {operacion.plan?.estado!=='CONFIRMADA' && <button className="btn green" onClick={confirmar} disabled={ocupado}>Confirmar planificación revisada</button>}
       {/* Selector de rutas con affordances visuales claros */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
         {rutas.map(r => {
@@ -225,7 +147,7 @@ export default function Rutas() {
               aria-pressed={activ}
             >
               <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: .5, opacity: activ ? .9 : .6, marginBottom: 4 }}>
-                {r.id} · {r.vehiculo.placa}
+                {r.zona} · {r.vehiculo.placa}
               </div>
               <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 2 }}>{r.vehiculo.conductor}</div>
               <div style={{ fontSize: 11, opacity: .85 }}>{r.vehiculo.marca}</div>
@@ -325,7 +247,7 @@ export default function Rutas() {
             <tbody>
               {paradasVisibles.map((p) => {
                 const bloq = p.bloqueado
-                const inmutable = p.estado === 'entregado'
+                const inmutable = ocupado || p.estado === 'entregado' || p.estado === 'en_camino'
                 const realIdx = ruta.paradas.findIndex(item => item.id === p.id)
                 const canSubir = realIdx > 0 && ruta.paradas[realIdx - 1]?.estado !== 'entregado'
                 const canBajar = realIdx >= 0 && realIdx < ruta.paradas.length - 1 && ruta.paradas[realIdx + 1]?.estado !== 'entregado'
@@ -429,7 +351,7 @@ export default function Rutas() {
           </div>
         </div>
         <ErrorBoundary>
-          <RouteMap plan={{ rutas: rutas.map(r => ({ ...r, pedidos: r.paradas })) }} />
+          <RouteMap plan={{ id: operacion.plan?.id, rutas: rutas.map(r => ({ ...r, pedidos: r.paradas })) }} />
         </ErrorBoundary>
       </div>
 

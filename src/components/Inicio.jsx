@@ -1,5 +1,7 @@
 import { useState, useMemo } from 'react'
-import { RUTAS_ACTIVAS } from '../data/mockRutas'
+import {useOperacion} from '../context/OperacionContext'
+import AccesosReparto from './AccesosReparto'
+import {useAuth} from '../context/AuthContext'
 
 /**
  * Dashboard de inicio.
@@ -8,6 +10,8 @@ import { RUTAS_ACTIVAS } from '../data/mockRutas'
  * Diseñado bajo Heurística #1 (estado del sistema visible) y Ley de Miller (chunking).
  */
 export default function Inicio() {
+  const {rutasResumen:RUTAS_ACTIVAS}=useOperacion()
+  const {puede}=useAuth()
   const [filtroActividad, setFiltroActividad] = useState('todas')
 
   // ── métricas calculadas desde las rutas activas ──────────────
@@ -39,7 +43,7 @@ export default function Inicio() {
       pct: porcentaje,
       KPI: kpiList
     }
-  }, [])
+  }, [RUTAS_ACTIVAS])
 
   // ── actividad reciente ────────────────────────────────────────
   const actividad = useMemo(() => {
@@ -48,7 +52,7 @@ export default function Inicio() {
         .filter(p => p.estado === 'entregado' || p.estado === 'ATENDIDA')
         .map(p => ({ ...p, conductor: r.vehiculo.conductor, ruta: r.id, color: r.color }))
     ).sort((a, b) => String(b.horaReal ?? '').localeCompare(String(a.horaReal ?? '')))
-  }, [])
+  }, [RUTAS_ACTIVAS])
 
   const actividadFiltrada = useMemo(() => {
     return filtroActividad === 'todas'
@@ -87,7 +91,7 @@ export default function Inicio() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
           <div>
             <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--ink)' }}>Progreso global de entregas de la jornada</div>
-            <div style={{ fontSize: 11.5, color: '#64748b', marginTop: 2 }}>Monitoreo en tiempo real · Operación iniciada a las 08:00 a.m. desde Almacén Lurín</div>
+            <div style={{ fontSize: 11.5, color: '#64748b', marginTop: 2 }}>Monitoreo en tiempo real · Jornada de reparto desde Almacén Lurín</div>
           </div>
           <div style={{ fontSize: 24, fontWeight: 800, color: '#2563EB' }}>{pct}% completado</div>
         </div>
@@ -220,6 +224,7 @@ export default function Inicio() {
         </div>
 
       </div>
+      {puede('accesos') && <AccesosReparto />}
     </div>
   )
 }

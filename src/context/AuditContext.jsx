@@ -66,7 +66,7 @@ const SEED_REGISTROS = [
 ]
 
 export function AuditProvider({ children }) {
-  const [registros, setRegistros] = useState(() => [...SEED_REGISTROS])
+  const [registros, setRegistros] = useState([])
 
   /**
    * @param {object} usuario  — objeto de usuario de AuthContext

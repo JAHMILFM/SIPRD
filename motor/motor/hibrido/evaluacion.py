@@ -2,6 +2,7 @@ from typing import List, Tuple, Dict, Any
 from motor.motor.modelos import Punto, VehiculoVRP, ParadaResultado
 from motor.motor.reglas import parse_hhmm_a_minutos, formatear_minutos_a_hhmm
 
+
 def evaluar_ruta(
     deposito: Punto,
     secuencia_pedidos: List[Punto],
@@ -9,7 +10,7 @@ def evaluar_ruta(
     mat_dist: List[List[float]],
     mat_tiempo: List[List[float]],
     indice_deposito: int = 0,
-    indices_pedidos: List[int] = None
+    indices_pedidos: List[int] = None,
 ) -> Dict[str, Any]:
     """
     Evalúa una ruta secuencial completa calculando distancias, tiempos de viaje,
@@ -18,7 +19,9 @@ def evaluar_ruta(
     peso_total = sum(p.peso_kg for p in secuencia_pedidos)
     vol_total = sum(p.volumen_m3 for p in secuencia_pedidos)
 
-    hora_salida_almacen_min = parse_hhmm_a_minutos(vehiculo.inicio_jornada) or (7 * 60 + 30)
+    hora_salida_almacen_min = parse_hhmm_a_minutos(vehiculo.inicio_jornada) or (
+        7 * 60 + 30
+    )
     hora_fin_jornada_min = parse_hhmm_a_minutos(vehiculo.fin_jornada) or (17 * 60 + 30)
 
     tiempo_actual = float(hora_salida_almacen_min)
@@ -29,9 +32,13 @@ def evaluar_ruta(
 
     # Validar capacidades
     if peso_total > vehiculo.capacidad_peso_kg:
-        infracciones.append(f"Exceso de peso: {peso_total:.1f} kg > {vehiculo.capacidad_peso_kg:.1f} kg")
+        infracciones.append(
+            f"Exceso de peso: {peso_total:.1f} kg > {vehiculo.capacidad_peso_kg:.1f} kg"
+        )
     if vol_total > vehiculo.capacidad_volumen_m3:
-        infracciones.append(f"Exceso de volumen: {vol_total:.2f} m³ > {vehiculo.capacidad_volumen_m3:.2f} m³")
+        infracciones.append(
+            f"Exceso de volumen: {vol_total:.2f} m³ > {vehiculo.capacidad_volumen_m3:.2f} m³"
+        )
 
     nodo_actual_idx = indice_deposito
 
@@ -55,24 +62,42 @@ def evaluar_ruta(
             inicio_atencion_min = llegada_min
 
         if v_fin and inicio_atencion_min > v_fin:
-            infracciones.append(f"Ventana vencida en pedido {p.id}: llegada {formatear_minutos_a_hhmm(inicio_atencion_min)} > fin {p.ventana_fin}")
+            infracciones.append(
+                f"Ventana vencida en pedido {p.id}: llegada {formatear_minutos_a_hhmm(inicio_atencion_min)} > fin {p.ventana_fin}"
+            )
 
         salida_min = inicio_atencion_min + p.tiempo_servicio_min
+        if p.intervalos_recepcion is not None:
+            candidatos = [
+                (max(llegada_min, a), b)
+                for a, b in p.intervalos_recepcion
+                if max(llegada_min, a) + p.tiempo_servicio_min <= b
+            ]
+            if candidatos:
+                inicio_atencion_min = min(a for a, b in candidatos)
+                espera_parada = inicio_atencion_min - llegada_min
+                salida_min = inicio_atencion_min + p.tiempo_servicio_min
+            else:
+                infracciones.append(
+                    f"No hay intervalo de recepción factible para pedido {p.id}"
+                )
         espera_total_min += espera_parada
         tiempo_actual = salida_min
         nodo_actual_idx = nodo_destino_idx
 
-        paradas.append(ParadaResultado(
-            secuencia=i + 1,
-            pedido_id=p.id,
-            nombre_cliente=p.nombre or p.id,
-            llegada=formatear_minutos_a_hhmm(llegada_min),
-            inicio_atencion=formatear_minutos_a_hhmm(inicio_atencion_min),
-            salida=formatear_minutos_a_hhmm(salida_min),
-            espera_min=round(espera_parada, 1),
-            lat=p.lat,
-            lon=p.lon
-        ))
+        paradas.append(
+            ParadaResultado(
+                secuencia=i + 1,
+                pedido_id=p.id,
+                nombre_cliente=p.nombre or p.id,
+                llegada=formatear_minutos_a_hhmm(llegada_min),
+                inicio_atencion=formatear_minutos_a_hhmm(inicio_atencion_min),
+                salida=formatear_minutos_a_hhmm(salida_min),
+                espera_min=round(espera_parada, 1),
+                lat=p.lat,
+                lon=p.lon,
+            )
+        )
 
     # Regreso al depósito
     dist_retorno = mat_dist[nodo_actual_idx][indice_deposito]
@@ -81,12 +106,22 @@ def evaluar_ruta(
     regreso_almacen_min = tiempo_actual + tiempo_retorno
 
     if regreso_almacen_min > hora_fin_jornada_min:
-        infracciones.append(f"Exceso de jornada: regreso a las {formatear_minutos_a_hhmm(regreso_almacen_min)} > fin jornada {vehiculo.fin_jornada}")
+        infracciones.append(
+            f"Exceso de jornada: regreso a las {formatear_minutos_a_hhmm(regreso_almacen_min)} > fin jornada {vehiculo.fin_jornada}"
+        )
 
     duracion_total = regreso_almacen_min - hora_salida_almacen_min
 
-    util_peso = round((peso_total / vehiculo.capacidad_peso_kg) * 100, 1) if vehiculo.capacidad_peso_kg > 0 else 0
-    util_vol = round((vol_total / vehiculo.capacidad_volumen_m3) * 100, 1) if vehiculo.capacidad_volumen_m3 > 0 else 0
+    util_peso = (
+        round((peso_total / vehiculo.capacidad_peso_kg) * 100, 1)
+        if vehiculo.capacidad_peso_kg > 0
+        else 0
+    )
+    util_vol = (
+        round((vol_total / vehiculo.capacidad_volumen_m3) * 100, 1)
+        if vehiculo.capacidad_volumen_m3 > 0
+        else 0
+    )
 
     return {
         "paradas": paradas,
@@ -98,5 +133,5 @@ def evaluar_ruta(
         "regreso_almacen": formatear_minutos_a_hhmm(regreso_almacen_min),
         "utilizacion_peso_pct": util_peso,
         "utilizacion_vol_pct": util_vol,
-        "infracciones": infracciones
+        "infracciones": infracciones,
     }

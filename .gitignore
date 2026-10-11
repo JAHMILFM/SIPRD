@@ -61,3 +61,7 @@ venv/
 *.sqlite3
 
 .neon
+backend/uploads/
+backend/demo_resultado.json
+backend/verificacion_demo.json
+.ruff_cache/

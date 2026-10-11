@@ -1,49 +1,19 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { RUTAS_ACTIVAS } from '../data/mockRutas.js'
-const USUARIOS_FIXTURE = [
-  { id: 'u1', usuario: 'dhuerta', clave: 'jefe123', nombre: 'Dennys Huerta', rol: 'jefe' },
-  { id: 'u2', usuario: 'asistente', clave: 'dist123', nombre: 'Lesli Pomalaya', rol: 'asistente' },
-  { id: 'u3', usuario: 'admin.ti', clave: 'ti2026', nombre: 'Área de TI', rol: 'ti' },
-]
+import {tienePermiso,perfilSeguro} from '../lib/permisos.js'
 
 describe('Lógica de Negocio y Seguridad de Frontend', () => {
-
-  describe('Matriz de Permisos y Roles (Auth)', () => {
-    const PERMISOS = {
-      jefe: ['aprobar_plan', 'editar_rutas', 'configurar', 'ver_cobranzas', 'exportar'],
-      asistente: ['editar_rutas', 'ver_cobranzas', 'exportar'],
-      ti: ['configurar', 'ver_logs'],
-    }
-
-    function puede(rol, accion) {
-      return PERMISOS[rol]?.includes(accion) ?? false
-    }
-
-    it('solo el rol jefe puede aprobar planes', () => {
-      assert.equal(puede('jefe', 'aprobar_plan'), true)
-      assert.equal(puede('asistente', 'aprobar_plan'), false)
-      assert.equal(puede('ti', 'aprobar_plan'), false)
+  describe('Permisos vigentes recibidos del servidor', () => {
+    it('asistente y jefe confirman cuando tienen el permiso', () => {
+      for(const rol of ['asistente','jefe'])assert.equal(tienePermiso({rol,permisos:['confirmar']},'confirmar'),true)
     })
-
-    it('asistente y jefe pueden editar rutas y ver cobranzas', () => {
-      assert.equal(puede('asistente', 'editar_rutas'), true)
-      assert.equal(puede('jefe', 'editar_rutas'), true)
-      assert.equal(puede('asistente', 'ver_cobranzas'), true)
-      assert.equal(puede('ti', 'editar_rutas'), false)
+    it('revocar un permiso no conserva acceso por el nombre del rol', () => {
+      assert.equal(tienePermiso({rol:'jefe',permisos:['rutas']},'confirmar'),false)
+      assert.equal(tienePermiso(null,'rutas'),false)
     })
-
-    it('sanitización de credenciales remueve contraseña antes de persistir', () => {
-      const jefeOriginal = USUARIOS_FIXTURE.find(u => u.rol === 'jefe')
-      assert.ok(jefeOriginal.clave, 'El mock original contiene clave')
-
-      const { clave, ...usuarioSanitizado } = jefeOriginal
-      assert.equal(usuarioSanitizado.clave, undefined, 'La clave debe ser removida')
-      assert.equal(usuarioSanitizado.nombre, jefeOriginal.nombre)
-      assert.equal(usuarioSanitizado.rol, 'jefe')
-
-      const serializado = JSON.stringify(usuarioSanitizado)
-      assert.equal(serializado.includes('clave'), false, 'El JSON no debe contener campo clave')
+    it('el perfil persistido excluye claves y hashes', () => {
+      assert.deepEqual(perfilSeguro({nombre:'Prueba',clave:'secreto',password_hash:'hash',clave_cifrada:'cifrado'}),{nombre:'Prueba'})
     })
   })
 

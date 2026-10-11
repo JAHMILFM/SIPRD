@@ -4,8 +4,8 @@ import Modal from './common/Modal'
 
 const DEMO = [
   {
-    usuario: 'dhuerta',
-    clave: 'jefe123',
+    usuario: 'demo.jefe',
+    clave: 'SiprdDemo2026!',
     nombre: 'Dennys Huerta',
     rol: 'Jefe de Distribución',
     desc: 'Acceso total + aprobación de rutas',
@@ -13,8 +13,8 @@ const DEMO = [
     color: '#E1252B'
   },
   {
-    usuario: 'asistente',
-    clave: 'dist123',
+    usuario: 'demo.asistente',
+    clave: 'SiprdDemo2026!',
     nombre: 'Lesli Pomalaya',
     rol: 'Asistente de Distribución',
     desc: 'Tanteo, ruteo en vivo y cobranzas',
@@ -22,8 +22,8 @@ const DEMO = [
     color: '#2563EB'
   },
   {
-    usuario: 'admin.ti',
-    clave: 'ti2026',
+    usuario: 'demo.admin',
+    clave: 'SiprdDemo2026!',
     nombre: 'Área de TI',
     rol: 'Administrador TI',
     desc: 'Configuración y registros de auditoría',
@@ -149,7 +149,7 @@ export default function Login() {
           </div>
 
           <h1 className="login-title-new">Ingreso al Sistema SIPRD</h1>
-          <p className="login-sub-new">Ingresa con tus credenciales de red para acceder a los módulos de despacho.</p>
+          <p className="login-sub-new">Ingresa con tus usuario y contraseña para acceder a los módulos de despacho.</p>
 
           <form onSubmit={handleSubmit} className="login-form-new" noValidate>
             <div className="login-field-new">

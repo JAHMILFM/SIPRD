@@ -39,8 +39,9 @@ export async function apiFetch(endpoint, opciones = {}) {
     const res = await fetch(url, config)
 
     if (res.status === 401) {
-      // Token expirado o inválido
-      // localStorage.removeItem('siprd_access_token')
+      localStorage.removeItem('siprd_access_token')
+      localStorage.removeItem('siprd_session')
+      window.dispatchEvent(new Event('siprd:sesion-expirada'))
     }
 
     if (!res.ok) {

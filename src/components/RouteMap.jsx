@@ -1,6 +1,8 @@
 import React, { useMemo, useState, useEffect } from 'react'
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet'
 import L from 'leaflet'
+import {apiFetch} from '../api/cliente'
+import {useOperacion} from '../context/OperacionContext'
 import { hhmm } from '../lib/planner'
 import { useToast } from '../context/ToastContext'
 
@@ -167,6 +169,9 @@ function ControlEnfoque({ centro, zoom }) {
 
 export default function RouteMap({ plan }) {
   const { toast } = useToast()
+  const operacion=useOperacion()
+  const [trazados,setTrazados]=useState({})
+  useEffect(()=>{let activo=true;setTrazados({});if(!plan?.id)return;Promise.all(plan.rutas.map(async r=>{try{return [r.id,(await apiFetch(`/planificaciones/${plan.id}/rutas/${r.id}/trazado`)).coordenadas]}catch{return [r.id,null]}})).then(rows=>{if(activo)setTrazados(Object.fromEntries(rows))});return()=>{activo=false}},[plan?.id,plan?.rutas.map(r=>r.paradas?.map(p=>p.id).join(',')).join(';')])
   const [rutaFiltrada, setRutaFiltrada] = useState(null)
   const [vistaSatelital, setVistaSatelital] = useState(false)
   const [enfoque, setEnfoque] = useState({ centro: [-12.1200, -77.0100], zoom: 11 })
@@ -195,10 +200,10 @@ export default function RouteMap({ plan }) {
       return {
         ...r,
         paradasCoords,
-        polylineCoords
+        polylineCoords: trazados[r.id] || polylineCoords
       }
     })
-  }, [plan])
+  }, [plan,trazados])
 
   const rutasVisibles = useMemo(() => {
     if (!rutaFiltrada) return rutasProcesadas

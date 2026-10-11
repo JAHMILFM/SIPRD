@@ -15,7 +15,10 @@ import Registros     from './components/Registros'
 import Login         from './components/Login'
 import Modal         from './components/common/Modal'
 import HelpDrawer    from './components/common/HelpDrawer'
-import { PEDIDOS, VEHICULOS } from './data/mock'
+import {useOperacion} from './context/OperacionContext'
+import {apiFetch} from './api/cliente'
+import {planUI} from './lib/adaptadores'
+import Reparto from './components/Reparto'
 import { planificar, separarReprogramados, hhmm } from './lib/planner'
 import { useAuth } from './context/AuthContext'
 import { useAudit } from './context/AuditContext'
@@ -27,6 +30,7 @@ const TITULOS = {
   rutas:     ['Gestión de Rutas',         'Reordena paradas en vivo y recalcula lo pendiente sin tocar lo ya entregado.'],
   cobranzas: ['Cobranzas',               'Valida los pagos del día para que el repartidor pueda avanzar al siguiente punto.'],
   config:    ['Configuración',            'Capacidad de vehículos, reglas por cliente y accesos.'],
+  reparto: ['Reparto', 'Pedidos asignados a su vehículo y jornada.'],
   registros: ['Registros de Auditoría',  'Trazabilidad de cambios: reglas, rutas, aprobaciones y cobros · RF-13 · RNF-09'],
 }
 
@@ -138,14 +142,16 @@ function AppInterna({ usuario, puede, puedeAprobar, log }) {
   const { toast } = useToast()
 
   // Módulo inicial según rol
-  const moduloInicial = puede('inicio') ? 'inicio' : puede('config') ? 'config' : 'registros'
+  const operacion=useOperacion()
+  const {fecha,vehiculos,pedidos,refresh,setPlan}=operacion
+  const moduloInicial = puede('reparto') ? 'reparto' : puede('inicio') ? 'inicio' : puede('cobranzas') ? 'cobranzas' : puede('config') ? 'config' : 'registros'
 
   const [modulo, setModulo]         = useState(moduloInicial)
   const [criterio, setCriterio]     = useState('jornada')
   const [turno, setTurno]           = useState('dia')
   const [jornadaMax, setJornadaMax] = useState(8)
   const [tamanos, setTamanos]       = useState([3, 4, 5, 6])
-  const [seleccion, setSeleccion]   = useState(5)
+  const [seleccion, setSeleccion]   = useState(6)
   const [calculando, setCalculando] = useState(false)
   const [helpOpen, setHelpOpen]     = useState(false)
   // RF-09: aprobación
@@ -186,49 +192,72 @@ function AppInterna({ usuario, puede, puedeAprobar, log }) {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [puede, toast])
 
-  const { planificables, reprogramados } = useMemo(() => separarReprogramados(PEDIDOS), [])
+  const disponibles=useMemo(()=>vehiculos.filter(v=>v.activo&&v.estado_operativo==='DISPONIBLE').sort((a,b)=>Number(!a.codigo_externo?.startsWith('DEMO6-V'))-Number(!b.codigo_externo?.startsWith('DEMO6-V'))),[vehiculos])
+  const [elegidos,setElegidos]=useState(null),[selector,setSelector]=useState(false)
+  const flota=disponibles.filter(v=>!elegidos || elegidos.includes(v.id))
+  const planificables=pedidos.filter(p=>p.estado==='PENDIENTE')
+  const reprogramados=[]
+  const [escenarios,setEscenarios]=useState([])
+  const [planGuardado,setPlanGuardado]=useState(null)
+  const vacio=planUI({rutas:[]},[],[],seleccion)
+  const plan=planGuardado ? planUI(planGuardado,vehiculos,pedidos,seleccion) : escenarios.find(e=>e.n===seleccion) || (operacion.plan ? planUI(operacion.plan,vehiculos,pedidos) : vacio)
+  const recalcTimerRef=useRef(0)
+  const recalcular=async()=>{
+    if(!flota.length){toast.warning('Seleccione vehículos disponibles.');return}
+    const peticion=++recalcTimerRef.current
+    setCalculando(true);setPlanGuardado(null);setAprobacion(null)
+    try{
+      const resultados=[]
+      for(const n of tamanos.filter(n=>n<=flota.length)){
+        const sol=await apiFetch('/planificaciones/previsualizar',{method:'POST',body:JSON.stringify({fecha,vehiculo_ids:flota.slice(0,n).map(v=>v.id),parametros:{inicio_jornada:turno==='dia'?'07:30':'15:00',jornada_horas:jornadaMax,criterio},replanificar_id:operacion.plan?.estado==='CONFIRMADA'?operacion.plan.id:undefined})})
+        resultados.push(planUI(sol,vehiculos,pedidos,n))
+      }
+      if(peticion!==recalcTimerRef.current)return
+      setEscenarios(resultados)
+      if(resultados.length && !resultados.some(x=>x.n===seleccion))setSeleccion(resultados[0].n)
+      toast.success('Escenarios calculados con los pedidos de la base de datos.')
+    }catch(e){if(peticion===recalcTimerRef.current)toast.error(e.message)}finally{if(peticion===recalcTimerRef.current)setCalculando(false)}
+  }
+  useEffect(()=>{setEscenarios([]);setPlanGuardado(null);setAprobacion(null)},[fecha,criterio,turno,jornadaMax])
+  useEffect(()=>{if(modulo==='algoritmo'&&flota.length&&(planificables.length || operacion.plan?.estado==='CONFIRMADA'))recalcular()},[modulo,fecha,vehiculos.length,criterio,turno,jornadaMax])
+  const guardarPropuesta=async()=>{
+    if(planGuardado)return planGuardado
+    if(!escenarios.length && operacion.plan && operacion.plan.rutas.length===seleccion && (operacion.plan.parametros?.criterio || 'jornada')===criterio && (operacion.plan.parametros?.jornada_horas || 8)===jornadaMax && (operacion.plan.parametros?.inicio_jornada || '07:30').slice(0,5)===(turno==='dia'?'07:30':'15:00'))return operacion.plan
+    const raw=await apiFetch('/planificaciones',{method:'POST',body:JSON.stringify({fecha,vehiculo_ids:flota.slice(0,seleccion).map(v=>v.id),parametros:{inicio_jornada:turno==='dia'?'07:30':'15:00',jornada_horas:jornadaMax,criterio},replanificar_id:operacion.plan?.estado==='CONFIRMADA'?operacion.plan.id:undefined})})
+    setPlanGuardado(raw);setPlan(raw);return raw
+  }
 
-  const escenarios = useMemo(
-    () => tamanos.map((n) => planificar(planificables, n)),
-    [planificables, tamanos]
-  )
-
-  const plan = escenarios.find((e) => e.n === seleccion) ?? escenarios[0]
-
-  const recalcTimerRef = useRef(null)
-
-  useEffect(() => {
-    return () => {
-      if (recalcTimerRef.current) clearTimeout(recalcTimerRef.current)
-    }
-  }, [])
-
-  const recalcular = () => {
+  const moverPedido = async (pedido,delta) => {
     setCalculando(true)
-    toast.info('Optimizando reparto con heurística y ventanas horarias…', { duration: 1400 })
-    if (recalcTimerRef.current) clearTimeout(recalcTimerRef.current)
-    recalcTimerRef.current = setTimeout(() => {
-      setCalculando(false)
-      toast.success('Escenarios de flota recalculados exitosamente.')
-    }, 1400)
+    try {
+      const raw=await guardarPropuesta()
+      const ruta=raw.rutas.find(r=>r.paradas.some(s=>String(s.pedido_id)===String(pedido.pedido_id)))
+      if(!ruta)throw new Error('El pedido no pertenece a la propuesta guardada.')
+      const i=ruta.paradas.findIndex(s=>String(s.pedido_id)===String(pedido.pedido_id)),j=i+delta
+      if(j<0||j>=ruta.paradas.length)return
+      const grupos=raw.rutas.map(r=>({id_ruta:r.id,parada_ids:r.paradas.map(s=>s.id)}))
+      const ids=grupos.find(g=>g.id_ruta===ruta.id).parada_ids
+      ;[ids[i],ids[j]]=[ids[j],ids[i]]
+      const actualizado=await apiFetch(`/planificaciones/${raw.id}/distribucion`,{method:'PUT',body:JSON.stringify({rutas:grupos})})
+      setPlanGuardado(actualizado);setPlan(actualizado);toast.success('Orden guardado; horarios y capacidades verificados.')
+    }catch(e){toast.error(e.message)}finally{setCalculando(false)}
   }
 
   const descartarPlan = () => {
     setAprobacion(null)
-    setSeleccion(5)
+    setSeleccion(6)
     log(usuario, 'Algoritmo', 'Descartó plan de ruteo', 'Se restableció el escenario a la configuración estándar de 5 vehículos')
     toast.info('Plan descartado. Escenario restablecido a valores por defecto.')
   }
 
-  const guardarBorrador = () => {
-    log(usuario, 'Algoritmo', 'Guardó borrador de plan', `Escenario con ${plan.n} vehículos y ${plan.rutas.reduce((s, r) => s + r.pedidos.length, 0)} pedidos guardado como borrador`)
-    toast.success(`Borrador del escenario de ${plan.n} vehículos guardado exitosamente.`)
+  const guardarBorrador = async () => {
+    try{await guardarPropuesta();toast.success('Propuesta guardada en la base de datos.');await refresh()}catch(e){toast.error(e.message)}
   }
 
   const agregarEscenario = () => {
     const siguiente = Math.max(...tamanos) + 1
-    if (siguiente > VEHICULOS.length) {
-      toast.warning(`No hay más vehículos configurados (máximo ${VEHICULOS.length}).`)
+    if (siguiente > flota.length) {
+      toast.warning(`No hay más vehículos configurados (máximo ${flota.length}).`)
       return
     }
     setTamanos([...tamanos, siguiente])
@@ -236,35 +265,15 @@ function AppInterna({ usuario, puede, puedeAprobar, log }) {
   }
 
   // RF-09: confirmar aprobación y persistir en backend
-  const confirmarAprobacion = async (fecha, hora) => {
-    const totalPedidos = plan.rutas.reduce((s, r) => s + r.pedidos.length, 0)
-    const datos = { usuario: usuario.nombre, titulo: usuario.titulo, fecha, hora, n: plan.n, pedidos: totalPedidos }
-    setAprobacion(datos)
-    setModalAprob(false)
-
-    // Persistir plan y versión en la base de datos real
-    try {
-      const token = localStorage.getItem('siprd_access_token')
-      const vehiculoIds = plan.rutas.map(r => String(r.vehiculo?.id || r.id_vehiculo || 'v1'))
-      await fetch('/api/v1/planificaciones', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify({
-          fecha: '27/08/2026',
-          vehiculo_ids: vehiculoIds,
-          parametros: { criterio, turno, jornadaMax }
-        })
-      })
-    } catch (err) {
-      console.warn('Sincronización de plan con backend:', err)
-    }
-
-    log(usuario, 'Algoritmo', 'Aprobó plan de ruteo',
-      `${plan.n} vehículos · ${totalPedidos} pedidos · jornada máx. ${hhmm(plan.jornadaMax)} · ${plan.kmTotal.toFixed(1)} km`)
-    toast.success(`Plan aprobado y registrado en la base de datos: ${plan.n} vehículos y ${totalPedidos} pedidos listos para despacho.`)
+  const confirmarAprobacion = async (fechaTexto, hora) => {
+    setCalculando(true)
+    try{
+      const guardado=await guardarPropuesta()
+      const confirmado=await apiFetch(`/planificaciones/${guardado.id}/confirmar`,{method:'POST'})
+      setPlanGuardado(confirmado);setPlan(confirmado)
+      setAprobacion({usuario:usuario.nombre,titulo:usuario.titulo,fecha:fechaTexto,hora,n:confirmado.rutas.length,pedidos:confirmado.rutas.reduce((s,r)=>s+r.paradas.length,0)})
+      setModalAprob(false);await refresh();toast.success('Planificación confirmada y disponible para reparto.')
+    }catch(e){toast.error(e.message)}finally{setCalculando(false)}
   }
 
   const [titulo, subtitulo] = TITULOS[modulo] ?? ['', '']
@@ -272,6 +281,7 @@ function AppInterna({ usuario, puede, puedeAprobar, log }) {
   return (
     <div className="app">
       {/* Centro de Ayuda y Heurísticas (Heurística #10) */}
+      {selector && <Modal isOpen title="Seleccionar vehículos" onClose={()=>setSelector(false)}><div className="tw">{disponibles.map(v=><label key={v.id} style={{display:'block',padding:8}}><input type="checkbox" checked={flota.some(x=>x.id===v.id)} onChange={e=>setElegidos(e.target.checked?[...flota.map(x=>x.id),v.id]:flota.filter(x=>x.id!==v.id).map(x=>x.id))}/> {v.placa} · {v.capacidad_kg} kg · {v.capacidad_m3} m³</label>)}</div><button className="btn blue" onClick={()=>{setSelector(false);recalcular()}}>Aplicar y recalcular</button></Modal>}
       <HelpDrawer isOpen={helpOpen} onClose={() => setHelpOpen(false)} />
 
       {/* Modal de aprobación */}
@@ -287,6 +297,7 @@ function AppInterna({ usuario, puede, puedeAprobar, log }) {
       <Sidebar activo={modulo} onCambiar={setModulo} onOpenHelp={() => setHelpOpen(true)} />
 
       <main className="main">
+        {operacion.error && <div className="warnbox">{operacion.error}</div>}
         <TopBar titulo={titulo} subtitulo={subtitulo} usuario={usuario} onOpenHelp={() => setHelpOpen(true)} />
 
         {/* ── Inicio ─────────────────────── */}
@@ -302,19 +313,20 @@ function AppInterna({ usuario, puede, puedeAprobar, log }) {
               onEditarReglas={() => setModulo('config')}
             />
 
+            <button className="btn out" onClick={()=>setSelector(true)}>Seleccionar vehículos · {flota.length} disponibles</button>
             <FleetTrial
               escenarios={escenarios}
               seleccion={seleccion}
-              onSeleccionar={setSeleccion}
+              onSeleccionar={n=>{setSeleccion(n);setPlanGuardado(null);setAprobacion(null)}}
               onAgregar={agregarEscenario}
               onRecalcular={recalcular}
               calculando={calculando}
               jornadaMax={jornadaMax}
-              totalPedidos={planificables.length}
+              totalPedidos={plan.rutas.reduce((n,r)=>n+r.pedidos.length,0)+plan.sinAsignar.length}
             />
 
             <div className="split">
-              <OrdersPanel plan={plan} reprogramados={reprogramados} />
+              <OrdersPanel onMover={moverPedido} ocupado={calculando} plan={plan} reprogramados={reprogramados} noPlanificables={plan.sinAsignar.filter(p=>p.codigo==='RESTRICCION_O_COORDENADAS')} />
               <ErrorBoundary>
                 <RouteMap plan={plan} />
               </ErrorBoundary>
@@ -345,9 +357,9 @@ function AppInterna({ usuario, puede, puedeAprobar, log }) {
                   </div>
                 )}
                 <div className="n">
-                  Última optimización: 27/08/2026, 08:45 a.m. · Criterio:{' '}
-                  {criterio === 'jornada' ? 'balancear jornada' : 'menor distancia'} · Turno{' '}
-                  {turno === 'dia' ? 'día' : 'noche'} · Motor: heurística + genético
+                  Fecha operativa: {fecha} · Criterio:{' '}
+                  {criterio === 'jornada' ? 'reducir duración de jornada' : 'menor distancia'} · Turno{' '}
+                  {turno === 'dia' ? 'día' : 'noche'} · Motor: optimización por zonas · {plan.fuente || 'pendiente de cálculo'}
                 </div>
               </div>
 
@@ -360,16 +372,16 @@ function AppInterna({ usuario, puede, puedeAprobar, log }) {
                     <button type="button" className="btn out" onClick={descartarPlan} title="Restablecer escenario por defecto">
                       Descartar plan
                     </button>
-                    <button type="button" className="btn out" onClick={guardarBorrador} title="Guardar cambios temporalmente">
+                    <button type="button" className="btn out" disabled={calculando || !plan.rutas.length} onClick={guardarBorrador} title="Guardar cambios temporalmente">
                       Guardar como borrador
                     </button>
                     {puedeAprobar() ? (
-                      <button className="btn green" onClick={() => setModalAprob(true)}>
+                      <button className="btn green" disabled={calculando || !plan.rutas.length} onClick={() => setModalAprob(true)}>
                         ✓ Aprobar y enviar a Rutas
                       </button>
                     ) : (
-                      <button className="btn out" disabled title="Solo el Jefe de Distribución puede aprobar rutas">
-                        🔒 Aprobación restringida al Jefe
+                      <button className="btn out" disabled title="Su rol no tiene permiso para confirmar rutas">
+                        🔒 Confirmación restringida
                       </button>
                     )}
                   </div>
@@ -387,6 +399,8 @@ function AppInterna({ usuario, puede, puedeAprobar, log }) {
 
         {/* ── Configuración ──────────────── */}
         {modulo === 'config' && (puede('config') ? <Configuracion /> : <AccesoDenegado />)}
+
+        {modulo === 'reparto' && (puede('reparto') ? <Reparto /> : <AccesoDenegado />)}
 
         {/* ── Registros de auditoría ─────── */}
         {modulo === 'registros' && (puede('registros') ? <Registros /> : <AccesoDenegado />)}

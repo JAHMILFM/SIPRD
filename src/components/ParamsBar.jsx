@@ -1,17 +1,22 @@
-import { FECHA } from '../data/mock'
+import {useOperacion} from '../context/OperacionContext'
+import {useState,useEffect} from 'react'
+import {apiFetch} from '../api/cliente'
 
 export default function ParamsBar({ criterio, setCriterio, turno, setTurno, jornadaMax, setJornadaMax, onEditarReglas }) {
+  const {fecha,plan}=useOperacion()
+  const [cantidad,setCantidad]=useState(0)
+  useEffect(()=>{apiFetch('/restricciones').then(r=>setCantidad(r.length)).catch(()=>{})},[])
   return (
     <div className="card">
       <div className="params">
         <div>
           <span className="lbl">Fecha de reparto</span>
-          <div className="fld">{FECHA} <span style={{ color: '#94A3B8' }}>📅</span></div>
+          <div className="fld">{fecha} <span style={{ color: '#94A3B8' }}>📅</span></div>
         </div>
 
         <div>
           <span className="lbl">Salida del almacén</span>
-          <div className="fld">08:00 <span style={{ color: '#94A3B8' }}>🕐</span></div>
+          <div className="fld">{turno==='dia'?'07:30':'15:00'} <span style={{ color: '#94A3B8' }}>🕐</span></div>
         </div>
 
         <div>
@@ -24,8 +29,7 @@ export default function ParamsBar({ criterio, setCriterio, turno, setTurno, jorn
             >
               <option value={7}>7 h 00 m</option>
               <option value={8}>8 h 00 m</option>
-              <option value={9}>9 h 00 m</option>
-              <option value={10}>10 h 00 m</option>
+
             </select>
           </div>
         </div>
@@ -53,7 +57,7 @@ export default function ParamsBar({ criterio, setCriterio, turno, setTurno, jorn
         <div>
           <span className="lbl">Reglas por cliente</span>
           <div className="fld">
-            <span>12 activas</span>
+            <span>{cantidad} activas</span>
             <button
               type="button"
               onClick={onEditarReglas}
@@ -66,8 +70,8 @@ export default function ParamsBar({ criterio, setCriterio, turno, setTurno, jorn
         </div>
 
         <div className="matrix">
-          <b>Matriz OSRM lista</b>
-          <i><span className="ok" />Calculada 08:45 a.m.</i>
+          <b>Matriz de la planificación</b>
+          <i><span className="ok" />{plan?.resultado?.fuente_distancias || 'Disponible al calcular'}</i>
         </div>
       </div>
     </div>

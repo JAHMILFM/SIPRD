@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
+import {apiFetch} from '../api/cliente'
 import { useAudit } from '../context/AuditContext'
 import { useToast } from '../context/ToastContext'
 
@@ -31,58 +32,17 @@ export default function Registros() {
   const [busca, setBusca]               = useState('')
 
   useEffect(() => {
-    let activo = true
-    async function cargarAuditoria() {
+    let activo=true
+    const cargar=async()=>{
       setCargandoApi(true)
-      try {
-        const token = localStorage.getItem('siprd_access_token')
-        const headers = token ? { Authorization: `Bearer ${token}` } : {}
-        const res = await fetch('/api/v1/auditoria?limite=100', { headers })
-        if (res.ok) {
-          const data = await res.json()
-          if (activo && Array.isArray(data) && data.length > 0) {
-            const adaptados = data.map(item => {
-              const dt = new Date(item.fecha)
-              const modMap = {
-                planificacion: 'Algoritmo',
-                planificacion_version: 'Rutas',
-                ruta: 'Rutas',
-                parada: 'Rutas',
-                cobro: 'Cobranzas',
-                comprobante_pago: 'Cobranzas',
-                usuario: 'Configuración',
-                vehiculo: 'Configuración',
-                regla_atencion: 'Configuración',
-                general: 'Sesión'
-              }
-              const modNormalizado = modMap[item.entidad?.toLowerCase()] || (item.entidad ? (item.entidad.charAt(0).toUpperCase() + item.entidad.slice(1)) : 'General')
-              return {
-                id: item.id?.slice(0, 8) || '0',
-                fecha: dt.toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' }),
-                hora: dt.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-                usuario: item.usuario_id ? `Usuario (${item.usuario_id.slice(0, 6)})` : 'Dennys Huerta',
-                rolUsuario: 'jefe',
-                modulo: modNormalizado,
-                accion: item.accion || 'OPERACION',
-                detalle: item.valores_despues ? JSON.stringify(item.valores_despues) : (item.entidad_id ? `Ref: ${item.entidad_id.slice(0, 8)}` : 'Registro auditado en BD')
-              }
-            })
-            setRegistrosApi(adaptados)
-          }
-        }
-      } catch {
-        // Fallback local silencioso
-      } finally {
-        if (activo) setCargandoApi(false)
-      }
+      try{
+        const res=await apiFetch('/auditoria?limite=200')
+        if(activo)setRegistrosApi(res.map(item=>({id:item.id,usuario:`Usuario ${item.usuario_id??'Sistema'}`,rolUsuario:'',modulo:{planificacion:'Algoritmo',ruta:'Rutas',parada:'Rutas',cobro:'Cobranzas',restriccion_cliente:'Configuración',vehiculo:'Configuración',usuario:'Sesión',rol:'Configuración'}[item.entidad]||item.entidad,accion:item.accion,detalle:JSON.stringify(item.valor_nuevo||item.valor_anterior||{referencia:item.entidad_id}),fecha:new Date(item.fecha_hora).toLocaleDateString('es-PE'),hora:new Date(item.fecha_hora).toLocaleTimeString('es-PE')})))
+      }catch(e){toast.error(e.message)}finally{if(activo)setCargandoApi(false)}
     }
-    cargarAuditoria()
-    return () => { activo = false }
+    cargar();const timer=setInterval(cargar,30000);return()=>{activo=false;clearInterval(timer)}
   }, [])
-
-  const registros = useMemo(() => {
-    return registrosApi.length > 0 ? registrosApi : registrosLocales
-  }, [registrosApi, registrosLocales])
+  const registros=registrosApi
 
   const modulos = useMemo(() => [...new Set(registros.map(r => r.modulo))], [registros])
 

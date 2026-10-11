@@ -1,11 +1,18 @@
 import time
 from typing import List, Dict, Any
-from motor.motor.modelos import InstanciaVRP, SolucionVRP, RutaResultado, NoAsignadoResultado, Punto
+from motor.motor.modelos import (
+    InstanciaVRP,
+    SolucionVRP,
+    RutaResultado,
+    NoAsignadoResultado,
+    Punto,
+)
 from motor.motor.matriz import matriz_distancias_tiempos
 from motor.motor.reglas import prefiltrar_pedidos
 from motor.motor.hibrido.construccion import construir_solucion_inicial
 from motor.motor.hibrido.busqueda_local import optimizar_2opt
 from motor.motor.hibrido.evaluacion import evaluar_ruta
+
 
 def optimizar_vrp(instancia: InstanciaVRP, metodo: str = "HIBRIDO") -> SolucionVRP:
     """
@@ -16,8 +23,7 @@ def optimizar_vrp(instancia: InstanciaVRP, metodo: str = "HIBRIDO") -> SolucionV
 
     # 1. Prefiltrar pedidos
     pedidos_aptos, no_asignados_prefiltro = prefiltrar_pedidos(
-        instancia.pedidos,
-        instancia.vehiculos
+        instancia.pedidos, instancia.vehiculos
     )
 
     if not pedidos_aptos or not instancia.vehiculos:
@@ -29,7 +35,7 @@ def optimizar_vrp(instancia: InstanciaVRP, metodo: str = "HIBRIDO") -> SolucionV
             total_duracion_min=0.0,
             total_pedidos_asignados=0,
             tiempo_ejecucion_seg=round(time.time() - inicio_t, 3),
-            infracciones=[]
+            infracciones=[],
         )
 
     # 2. Construir nodos y mapa de índices (depósito = 0)
@@ -37,7 +43,16 @@ def optimizar_vrp(instancia: InstanciaVRP, metodo: str = "HIBRIDO") -> SolucionV
     mapa_indices = {p.id: idx for idx, p in enumerate(todos_puntos)}
 
     # 3. Matriz de distancias y tiempos
-    mat_dist, mat_tiempo = matriz_distancias_tiempos(todos_puntos, instancia.velocidad_kmh)
+    if (
+        instancia.matriz_distancias is not None
+        and instancia.matriz_tiempos is not None
+        and len(pedidos_aptos) == len(instancia.pedidos)
+    ):
+        mat_dist, mat_tiempo = instancia.matriz_distancias, instancia.matriz_tiempos
+    else:
+        mat_dist, mat_tiempo = matriz_distancias_tiempos(
+            todos_puntos, instancia.velocidad_kmh
+        )
 
     # 4. Construcción inicial
     rutas_iniciales, no_asignados_capacidad = construir_solucion_inicial(
@@ -46,7 +61,7 @@ def optimizar_vrp(instancia: InstanciaVRP, metodo: str = "HIBRIDO") -> SolucionV
         instancia.vehiculos,
         mat_dist,
         mat_tiempo,
-        mapa_indices
+        mapa_indices,
     )
 
     todos_no_asignados = no_asignados_prefiltro + no_asignados_capacidad
@@ -67,39 +82,30 @@ def optimizar_vrp(instancia: InstanciaVRP, metodo: str = "HIBRIDO") -> SolucionV
         ]
 
         secuencia_opt = optimizar_2opt(
-            instancia.deposito,
-            pedidos_en_ruta,
-            v,
-            mat_dist,
-            mat_tiempo,
-            mapa_indices
+            instancia.deposito, pedidos_en_ruta, v, mat_dist, mat_tiempo, mapa_indices, instancia.criterio
         )
 
         indices_opt = [mapa_indices[p.id] for p in secuencia_opt]
         eval_opt = evaluar_ruta(
-            instancia.deposito,
-            secuencia_opt,
-            v,
-            mat_dist,
-            mat_tiempo,
-            0,
-            indices_opt
+            instancia.deposito, secuencia_opt, v, mat_dist, mat_tiempo, 0, indices_opt
         )
 
-        rutas_optimizadas.append(RutaResultado(
-            ruta_id=r.ruta_id,
-            vehiculo_id=v.id,
-            placa=v.placa,
-            paradas=eval_opt["paradas"],
-            peso_total_kg=eval_opt["peso_total_kg"],
-            volumen_total_m3=eval_opt["volumen_total_m3"],
-            distancia_total_km=eval_opt["distancia_total_km"],
-            duracion_total_min=eval_opt["duracion_total_min"],
-            salida_almacen=eval_opt["salida_almacen"],
-            regreso_almacen=eval_opt["regreso_almacen"],
-            utilizacion_peso_pct=eval_opt["utilizacion_peso_pct"],
-            utilizacion_vol_pct=eval_opt["utilizacion_vol_pct"]
-        ))
+        rutas_optimizadas.append(
+            RutaResultado(
+                ruta_id=r.ruta_id,
+                vehiculo_id=v.id,
+                placa=v.placa,
+                paradas=eval_opt["paradas"],
+                peso_total_kg=eval_opt["peso_total_kg"],
+                volumen_total_m3=eval_opt["volumen_total_m3"],
+                distancia_total_km=eval_opt["distancia_total_km"],
+                duracion_total_min=eval_opt["duracion_total_min"],
+                salida_almacen=eval_opt["salida_almacen"],
+                regreso_almacen=eval_opt["regreso_almacen"],
+                utilizacion_peso_pct=eval_opt["utilizacion_peso_pct"],
+                utilizacion_vol_pct=eval_opt["utilizacion_vol_pct"],
+            )
+        )
 
     total_dist = round(sum(r.distancia_total_km for r in rutas_optimizadas), 2)
     total_dur = round(sum(r.duracion_total_min for r in rutas_optimizadas), 1)
@@ -114,5 +120,5 @@ def optimizar_vrp(instancia: InstanciaVRP, metodo: str = "HIBRIDO") -> SolucionV
         total_duracion_min=total_dur,
         total_pedidos_asignados=total_asig,
         tiempo_ejecucion_seg=delta_t,
-        infracciones=[]
+        infracciones=[],
     )

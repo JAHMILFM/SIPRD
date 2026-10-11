@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react'
-import { NO_PLANIFICABLES } from '../data/mock'
 import { hhmm } from '../lib/planner'
 import { useToast } from '../context/ToastContext'
 
@@ -12,7 +11,7 @@ function chipPrioridad(p) {
   return <span className={`chip ${clase}`}><span aria-hidden="true">{icon}</span> {p}</span>
 }
 
-export default function OrdersPanel({ plan, reprogramados }) {
+export default function OrdersPanel({ plan, reprogramados, noPlanificables = [], onMover, ocupado }) {
   const { toast } = useToast()
   const [tab, setTab]         = useState('pedidos')
   const [pagina, setPagina]   = useState(0)
@@ -118,7 +117,7 @@ export default function OrdersPanel({ plan, reprogramados }) {
           onClick={() => cambiarTab('nop')}
           aria-selected={tab === 'nop'}
         >
-          No planificables <span className="cnt dang">{NO_PLANIFICABLES.length}</span>
+          No planificables <span className="cnt dang">{noPlanificables.length}</span>
         </button>
       </div>
 
@@ -214,6 +213,7 @@ export default function OrdersPanel({ plan, reprogramados }) {
                   </th>
                   <th>VENTANA</th>
                   <th className="num">SERV.</th>
+                  {onMover && <th>ORDEN</th>}
                   <th
                     className="sortable"
                     tabIndex={0}
@@ -255,12 +255,13 @@ export default function OrdersPanel({ plan, reprogramados }) {
                       <i>{p.dias ? p.dias.map((d) => DIAS_CORTOS[d]).join(', ') : 'Sin restricción'}</i>
                     </td>
                     <td className="num">{p.servicio} min</td>
+                    {onMover && <td style={{whiteSpace:'nowrap'}}>{[-1,1].map(delta=><button key={delta} className="btn out" style={{padding:'3px 7px'}} title={delta<0?'Subir pedido':'Bajar pedido'} aria-label={`${delta<0?'Subir':'Bajar'} pedido ${p.codigo || p.id}`} disabled={ocupado || p.bloqueado || ['entregado','en_camino'].includes(p.estado) || (delta<0?p.orden===1:p.orden===plan.rutas.find(r=>r.id===p.ruta)?.pedidos.length)} onClick={()=>onMover(p,delta)}>{delta<0?'↑':'↓'}</button>)}</td>}
                     <td>{chipPrioridad(p.prioridad)}</td>
                   </tr>
                 ))}
                 {visibles.length === 0 && (
                   <tr>
-                    <td colSpan={10} className="empty">
+                    <td colSpan={onMover?11:10} className="empty">
                       <b>Ningún pedido coincide con «{busca}»</b>
                       <p style={{ marginTop: 6, color: '#64748b' }}>Prueba con otro término de búsqueda o limpia el filtro.</p>
                       <button
@@ -457,7 +458,7 @@ export default function OrdersPanel({ plan, reprogramados }) {
               </tr>
             </thead>
             <tbody>
-              {NO_PLANIFICABLES.map((p) => (
+              {noPlanificables.map((p) => (
                 <tr key={p.id}>
                   <td>#{p.id}</td>
                   <td className="cli"><b>{p.cliente}</b></td>

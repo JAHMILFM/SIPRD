@@ -1,116 +1,94 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Response, Request
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from typing import Optional
+from sqlalchemy import select, func
+from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.core.db import get_db
 from backend.app.core.seguridad import (
-    hash_contrasena, verificar_contrasena, crear_access_token, crear_refresh_token,
-    obtener_usuario_actual, decodificar_token
+    verificar_contrasena,
+    crear_access_token,
+    obtener_usuario_actual,
 )
-from backend.app.core.errores import ErrorNoAutorizado, ErrorDominio
+from backend.app.core.errores import ErrorNoAutorizado
 from backend.app.core.auditoria import registrar_auditoria
 from backend.app.core.tiempo import ahora
 from backend.app.models import Usuario
+from backend.app.core.permisos import permisos_rol
 
 router = APIRouter(prefix="/auth", tags=["Autenticación"])
+
 
 class LoginRequest(BaseModel):
     usuario: str
     clave: str
 
-class LoginResponse(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
-    usuario: dict
 
-@router.post("/login", response_model=LoginResponse)
-async def login(req: LoginRequest, response: Response, request: Request, db: AsyncSession = Depends(get_db)):
-    # Buscar por usuario o correo sin distinguir mayúsculas
-    term = req.usuario.strip().lower()
-    query = select(Usuario).where(
-        (Usuario.correo.ilike(term)) | (Usuario.correo.ilike(f"{term}@%"))
-    )
-    result = await db.execute(query)
-    user = result.scalars().first()
-
-    if not user or not verificar_contrasena(req.clave, user.hash_contrasena):
-        raise ErrorNoAutorizado("Credenciales incorrectas")
-
-    if not user.activo:
-        raise ErrorDominio(
-            codigo="USUARIO_DESACTIVADO",
-            mensaje="El usuario se encuentra inactivo. Comuníquese con el administrador.",
-            status_code=status.HTTP_403_FORBIDDEN
-        )
-
-    # Generar tokens
-    datos_token = {
-        "sub": user.id,
-        "usuario": user.usuario,
-        "correo": user.correo,
-        "rol": user.rol,
-        "nombre": f"{user.nombre} {user.apellidos}"
-    }
-    access_token = crear_access_token(datos_token)
-    refresh_token = crear_refresh_token({"sub": user.id})
-
-    # Registrar auditoría de login
-    ip_cliente = request.client.host if request.client else None
-    await registrar_auditoria(
-        db=db,
-        accion="LOGIN",
-        entidad="usuario",
-        entidad_id=user.id,
-        usuario_id=user.id,
-        ip=ip_cliente
-    )
-    await db.commit()
-
-    # Enviar cookie httpOnly segura para refresh token
-    response.set_cookie(
-        key="siprd_refresh_token",
-        value=refresh_token,
-        httponly=True,
-        samesite="lax",
-        secure=False, # True en HTTPS producción
-        max_age=7 * 24 * 3600
-    )
-
-    return LoginResponse(
-        access_token=access_token,
-        usuario={
-            "id": user.id,
-            "usuario": user.usuario,
-            "correo": user.correo,
-            "nombre": f"{user.nombre} {user.apellidos}",
-            "rol": user.rol.lower(),
-            "rol_db": user.rol,
-            "activo": user.activo
-        }
-    )
-
-@router.get("/yo")
-async def obtener_perfil_actual(usuario: dict = Depends(obtener_usuario_actual), db: AsyncSession = Depends(get_db)):
-    query = select(Usuario).where(Usuario.id == usuario["sub"])
-    result = await db.execute(query)
-    u = result.scalars().first()
-    if not u or not u.activo:
-        raise ErrorNoAutorizado("Usuario no encontrado o inactivo")
+def perfil(u):
     return {
-        "id": u.id,
+        "id": u.id_usuario,
         "usuario": u.usuario,
         "correo": u.correo,
-        "nombre": f"{u.nombre} {u.apellidos}",
-        "nombres": u.nombre,
-        "apellidos": u.apellidos,
-        "rol": u.rol.lower(),
-        "rol_db": u.rol,
+        "nombre": f"{u.nombres} {u.apellidos}".strip(),
+        "rol": u.rol,
+        "permisos": permisos_rol(u.rol_rel),
+        "id_vehiculo": u.id_vehiculo,
+        "vigente_hasta": u.clave_vigente_hasta,
         "activo": u.activo,
-        "ultimo_acceso": u.ultimo_acceso
     }
 
+
+@router.post("/login")
+async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
+    term = req.usuario.strip().lower()
+    u = (
+        (
+            await db.execute(
+                select(Usuario).where(
+                    (func.lower(Usuario.nombre_usuario) == term)
+                    | (func.lower(Usuario.correo) == term)
+                )
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if (
+        not u
+        or not u.activo
+        or not u.rol_rel.activo
+        or not verificar_contrasena(req.clave, u.password_hash)
+    ):
+        raise ErrorNoAutorizado("Usuario o contraseña incorrectos.")
+    if u.rol == "REPARTIDOR" and (
+        not u.clave_vigente_hasta or u.clave_vigente_hasta <= ahora()
+    ):
+        raise ErrorNoAutorizado(
+            "La clave de reparto venció. Solicite la clave de la jornada."
+        )
+    token = crear_access_token(
+        {"sub": str(u.id_usuario), "rol": u.rol, "version_sesion": u.version_sesion}
+    )
+    await registrar_auditoria(
+        db, "LOGIN", "usuario", u.id_usuario, usuario_id=u.id_usuario
+    )
+    await db.commit()
+    return {"access_token": token, "token_type": "bearer", "usuario": perfil(u)}
+
+
+@router.get("/yo")
+async def yo(
+    usuario: dict = Depends(obtener_usuario_actual), db: AsyncSession = Depends(get_db)
+):
+    return perfil(await db.get(Usuario, int(usuario["sub"])))
+
+
 @router.post("/salir")
-async def salir(response: Response, usuario: dict = Depends(obtener_usuario_actual)):
-    response.delete_cookie("siprd_refresh_token")
-    return {"mensaje": "Sesión finalizada exitosamente"}
+async def salir(
+    usuario: dict = Depends(obtener_usuario_actual), db: AsyncSession = Depends(get_db)
+):
+    u = await db.get(Usuario, int(usuario["sub"]))
+    u.version_sesion += 1
+    await registrar_auditoria(
+        db, "LOGOUT", "usuario", u.id_usuario, usuario_id=u.id_usuario
+    )
+    await db.commit()
+    return {"mensaje": "Sesión finalizada"}

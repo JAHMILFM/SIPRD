@@ -1,5 +1,6 @@
-import { useState, useMemo } from 'react'
-import { COBROS_INICIAL } from '../data/mockRutas'
+import { useState, useMemo, useEffect } from 'react'
+import {useOperacion} from '../context/OperacionContext'
+import {apiFetch} from '../api/cliente'
 import { useAuth } from '../context/AuthContext'
 import { useAudit } from '../context/AuditContext'
 import { useToast } from '../context/ToastContext'
@@ -34,16 +35,20 @@ function chipEstado(estado) {
 }
 
 export default function Cobranzas() {
-  const { usuario } = useAuth()
+  const { usuario,puede } = useAuth()
+  const operacion=useOperacion()
   const { log }     = useAudit()
   const { toast }   = useToast()
 
-  const [cobros, setCobros]         = useState(COBROS_INICIAL)
+  const [cobros, setCobros]         = useState([])
   const [filtro, setFiltro]         = useState('todos')
   const [modalDetalle, setModalDetalle] = useState(null)
   const [modalRechazo, setModalRechazo] = useState(null) // id del cobro a rechazar
   const [motivoRechazo, setMotivoRechazo] = useState('')
   const [busca, setBusca]           = useState('')
+  const [foto,setFoto]=useState(null)
+  useEffect(()=>{setCobros(operacion.cobros)},[operacion.cobros])
+  useEffect(()=>{let url;const cargar=async()=>{setFoto(null);if(!modalDetalle)return;try{const res=await apiFetch(`/cobros/${modalDetalle}/comprobante/archivo`);url=URL.createObjectURL(await res.blob());setFoto(url)}catch{}};cargar();return()=>{if(url)URL.revokeObjectURL(url)}},[modalDetalle])
 
   // Métricas calculadas
   const { pendientes, validados, rechazados, montoVal, montoPend } = useMemo(() => {
@@ -71,58 +76,24 @@ export default function Cobranzas() {
   }, [cobros, filtro, busca])
 
   // ── Validación con soporte de Deshacer (Heurística #3) ─────────
-  const validar = (id, nota = '') => {
-    const ahora = new Date()
-    const horaV = ahora.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-    const cobroOriginal = cobros.find(c => c.id === id)
-
-    setCobros(prev => prev.map(c => c.id === id ? { ...c, estado: 'validado', nota, horaValidacion: horaV } : c))
-
-    if (cobroOriginal) {
-      log(usuario, 'Cobranzas', 'Validó pago', `${cobroOriginal.cliente} · S/ ${cobroOriginal.monto.toLocaleString('es-PE')} · ${cobroOriginal.tipo}`)
-      toast.success(`Pago de S/ ${cobroOriginal.monto.toLocaleString('es-PE')} (${cobroOriginal.cliente}) validado.`, {
-        duration: 5000,
-        action: {
-          label: 'Deshacer',
-          onClick: () => {
-            setCobros(prev => prev.map(c => c.id === id ? cobroOriginal : c))
-            toast.info('Validación revertida a estado pendiente.')
-          }
-        }
-      })
-    }
-    setModalDetalle(null)
+  const validar = async (id) => {
+    try{await apiFetch(`/cobros/${id}/contraste`,{method:'POST',body:JSON.stringify({resultado:'CONFORME'})});await operacion.refresh();setModalDetalle(null);toast.success('Pago confirmado por Tesorería.')}catch(e){toast.error(e.message)}
   }
 
-  // ── Rechazo con motivo obligatorio (Heurística #5 y #9) ───────
   const iniciarRechazo = (id) => {
     setModalRechazo(id)
     setMotivoRechazo('')
     setModalDetalle(null)
   }
 
-  const confirmarRechazo = () => {
-    if (!motivoRechazo.trim()) {
-      toast.warning('Debes ingresar el motivo del rechazo para informar al transportista.')
-      return
-    }
-
-    const ahora = new Date()
-    const horaR = ahora.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-    const cobro = cobros.find(c => c.id === modalRechazo)
-
-    setCobros(prev => prev.map(c => c.id === modalRechazo ? { ...c, estado: 'rechazado', nota: motivoRechazo.trim(), horaValidacion: horaR } : c))
-
-    if (cobro) {
-      log(usuario, 'Cobranzas', 'Rechazó pago', `${cobro.cliente} · S/ ${cobro.monto.toLocaleString('es-PE')} · Motivo: ${motivoRechazo}`)
-      toast.error(`Pago de ${cobro.cliente} rechazado. Repartidor notificado.`)
-    }
-
-    setModalRechazo(null)
-    setMotivoRechazo('')
+  const confirmarRechazo = async () => {
+    if(!motivoRechazo.trim()){toast.warning('Indique la observación del pago.');return}
+    try{await apiFetch(`/cobros/${modalRechazo}/contraste`,{method:'POST',body:JSON.stringify({resultado:'OBSERVADO',observacion:motivoRechazo.trim()})});await operacion.refresh();setModalRechazo(null);setMotivoRechazo('');toast.success('Observación guardada y disponible para el repartidor.')}catch(e){toast.error(e.message)}
+  }
+  const exportarExcel=async()=>{
+    try{const res=await apiFetch(`/cobros/exportacion.xlsx?fecha=${operacion.fecha}`);const url=URL.createObjectURL(await res.blob());const a=document.createElement('a');a.href=url;a.download=`arqueo_${operacion.fecha}.xlsx`;a.click();URL.revokeObjectURL(url)}catch(e){toast.error(e.message)}
   }
 
-  // ── Exportación a CSV (Heurística #7) ──────────────────────────
   const exportarCobrosCSV = () => {
     try {
       const headers = ['Pedido', 'Ruta', 'Repartidor', 'Cliente', 'Monto_PEN', 'Tipo', 'Hora_Reporte', 'Estado', 'Nota']
@@ -195,7 +166,8 @@ export default function Cobranzas() {
                 <div>
                   <div style={{ fontSize: 32, marginBottom: 6 }}>🧾</div>
                   <div style={{ fontWeight: 700, fontSize: 13, color: '#0f172a' }}>Comprobante digital adjuntado</div>
-                  <div style={{ fontSize: 11.5, color: '#64748b', marginTop: 3 }}>{cobroSeleccionado.nota || 'Verificado con banco receptor'}</div>
+                  {foto && <img src={foto} alt="Comprobante de pago" style={{maxWidth:'100%',maxHeight:320,objectFit:'contain'}}/>}
+                  <div style={{ fontSize: 11.5, color: '#64748b', marginTop: 3 }}>{cobroSeleccionado.nota || 'Comprobante adjunto para contraste por Tesorería'}</div>
                 </div>
               ) : (
                 <div>
@@ -218,19 +190,19 @@ export default function Cobranzas() {
             <button type="button" className="btn btn-secondary" onClick={() => setModalDetalle(null)}>
               Cerrar
             </button>
-            {cobroSeleccionado.estado === 'pendiente' && (
+            {puede('validar_cobros') && cobroSeleccionado.estado === 'pendiente' && (
               <>
                 <button
                   type="button"
                   className="btn btn-danger"
-                  onClick={() => iniciarRechazo(cobroSeleccionado.id)}
+                  disabled={!puede('validar_cobros')} onClick={() => iniciarRechazo(cobroSeleccionado.id)}
                 >
                   ✕ Rechazar
                 </button>
                 <button
                   type="button"
                   className="btn btn-success"
-                  onClick={() => validar(cobroSeleccionado.id)}
+                  disabled={!puede('validar_cobros')} onClick={() => validar(cobroSeleccionado.id)}
                 >
                   ✓ Validar Pago
                 </button>
@@ -251,7 +223,7 @@ export default function Cobranzas() {
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div style={{ background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: 8, padding: '10px 14px', fontSize: 12, color: '#991b1b' }}>
-              ⚠️ <strong>Esta acción bloqueará al conductor</strong> hasta que ingrese un nuevo comprobante o cobre en efectivo.
+              ⚠️ <strong>El pago quedará observado</strong> hasta que el repartidor corrija el monto o comprobante y Tesorería lo confirme.
             </div>
 
             <div>
@@ -337,8 +309,7 @@ export default function Cobranzas() {
                 type="button"
                 className="btn btn-primary"
                 onClick={() => {
-                  window.open('/api/v1/cobros/exportacion.xlsx', '_blank')
-                  toast.success('Descargando arqueo de cobranzas en Excel...')
+                  exportarExcel()
                 }}
                 title="Descargar libro Excel oficial para arqueo de caja (openpyxl)"
               >
@@ -447,7 +418,7 @@ export default function Cobranzas() {
                           <>
                             <button
                               type="button"
-                              onClick={() => validar(c.id, '')}
+                              disabled={!puede('validar_cobros')} onClick={() => validar(c.id, '')}
                               className="btn btn-success"
                               style={{ padding: '4px 10px', fontSize: 11 }}
                               title="Aprobar pago"
@@ -457,7 +428,7 @@ export default function Cobranzas() {
                             </button>
                             <button
                               type="button"
-                              onClick={() => iniciarRechazo(c.id)}
+                              disabled={!puede('validar_cobros')} onClick={() => iniciarRechazo(c.id)}
                               className="btn btn-danger"
                               style={{ padding: '4px 8px', fontSize: 11 }}
                               title="Rechazar pago con motivo"

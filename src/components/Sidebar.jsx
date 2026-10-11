@@ -1,4 +1,4 @@
-import { useAuth, PERMISOS } from '../context/AuthContext'
+import { useAuth } from '../context/AuthContext'
 
 const TODOS_MODULOS = [
   { id: 'inicio',    label: 'Inicio',        shortcut: '1' },
@@ -7,6 +7,7 @@ const TODOS_MODULOS = [
   { id: 'cobranzas', label: 'Cobranzas',     shortcut: '4' },
   { id: 'config',    label: 'Configuración', shortcut: '5' },
   { id: 'registros', label: 'Registros',     shortcut: '6' },
+  { id: 'reparto', label: 'Reparto', shortcut: '7' },
 ]
 
 const ICONOS = {
@@ -21,11 +22,11 @@ const ICONOS = {
 const ROL_COLOR = { jefe: '#E1252B', asistente: '#2563EB', ti: '#9333EA' }
 
 export default function Sidebar({ activo, onCambiar, onOpenHelp }) {
-  const { usuario, logout } = useAuth()
+  const { usuario, logout, puede } = useAuth()
 
   // Solo muestra los módulos que el rol puede ver (RNF-02)
   const modulos = TODOS_MODULOS.filter(m =>
-    usuario ? (PERMISOS[usuario.rol] ?? []).includes(m.id) : false
+    puede(m.id)
   )
 
   return (
@@ -54,7 +55,7 @@ export default function Sidebar({ activo, onCambiar, onOpenHelp }) {
               {m.id === 'cobranzas'  && <circle cx="12" cy="12" r="9" />}
               {m.id === 'algoritmo'  && <><circle cx="6" cy="6" r="2.5" /><circle cx="18" cy="18" r="2.5" /></>}
               {m.id === 'config'     && <circle cx="12" cy="12" r="3.5" />}
-              <path d={ICONOS[m.id]} />
+              <path d={ICONOS[m.id] || ICONOS.rutas} />
             </svg>
             <span>{m.label}</span>
             <span className="nav-shortcut-badge" aria-hidden="true">{m.shortcut}</span>
@@ -68,7 +69,7 @@ export default function Sidebar({ activo, onCambiar, onOpenHelp }) {
             <span>Operación del día</span>
             <span className="pill">En curso</span>
           </div>
-          <small>Actualizado 08:45 a.m.</small>
+          <small>Datos de la jornada</small>
         </div>
 
         {/* Botón de Ayuda en Sidebar (Heurística #10) */}

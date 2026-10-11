@@ -1,20 +1,7 @@
-import { createContext, useContext, useState, useCallback, useMemo } from 'react'
-import { USUARIOS } from '../data/mockUsuarios.js'
+import { createContext, useContext, useState, useCallback, useMemo, useEffect } from 'react'
+import { apiFetch } from '../api/cliente.js'
+import {tienePermiso,perfilSeguro} from '../lib/permisos'
 
-export { USUARIOS }
-
-// ── Permisos por rol (RNF-02) ─────────────────────────────────
-// jefe:      aprueba rutas, accede a todo
-// asistente: arma rutas, valida pagos, NO aprueba
-// ti:        solo configuración y registros de auditoría
-export const PERMISOS = {
-  jefe:      ['inicio', 'algoritmo', 'rutas', 'cobranzas', 'config', 'registros'],
-  asistente: ['inicio', 'algoritmo', 'rutas', 'cobranzas'],
-  ti:        ['config', 'registros'],
-}
-
-// Solo el Jefe / Coordinador puede aprobar rutas (RF-09 / ck_ruta_aprobacion)
-export const PUEDE_APROBAR = { jefe: true, asistente: false, ti: false }
 
 const AuthContext = createContext(null)
 
@@ -28,48 +15,28 @@ export function AuthProvider({ children }) {
     }
   })
 
+  const adaptar = u => {
+    const rol = {ASISTENTE_DISTRIBUCION:'asistente',JEFE_DISTRIBUCION:'jefe',ASISTENTE:'asistente',JEFE:'jefe',ADMINISTRADOR:'ti',TESORERIA:'tesoreria',REPARTIDOR:'repartidor'}[u.rol] || u.rol.toLowerCase()
+    return {...perfilSeguro(u),rol,rol_db:u.rol,titulo:{asistente:'Asistente de Distribución',jefe:'Jefe de Distribución',ti:'Administrador',tesoreria:'Tesorería',repartidor:'Repartidor'}[rol],iniciales:u.nombre.split(' ').slice(0,2).map(x=>x[0]).join('')}
+  }
   const login = useCallback(async (user, clave) => {
-    // 1. Intento de autenticación real contra el backend FastAPI
     try {
-      const res = await fetch('/api/v1/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ usuario: user, clave })
-      })
-      if (res.ok) {
-        const data = await res.json()
-        if (data.access_token) {
-          localStorage.setItem('siprd_access_token', data.access_token)
-        }
-        if (data.usuario) {
-          setUsuario(data.usuario)
-          try {
-            localStorage.setItem('siprd_session', JSON.stringify(data.usuario))
-          } catch {}
-          return true
-        }
-      }
-    } catch {
-      // Si la API no está disponible en este momento, fallback al catálogo local
-    }
-
-    // 2. Fallback local / offline
-    const u = USUARIOS.find(u => (u.usuario === user || u.correo === user) && u.clave === clave)
-    if (!u) return false
-
-    // Sanitizar credenciales para no persistir contraseña en localStorage
-    const { clave: _c, ...usuarioSeguro } = u
-    setUsuario(usuarioSeguro)
-    try {
-      localStorage.setItem('siprd_session', JSON.stringify(usuarioSeguro))
-    } catch {
-      // Ignorar fallos de cuota o modo incógnito restringido
-    }
-    return true
+      const data=await apiFetch('/auth/login',{method:'POST',body:JSON.stringify({usuario:user,clave})})
+      localStorage.setItem('siprd_access_token',data.access_token)
+      const u=adaptar(data.usuario);setUsuario(prev=>JSON.stringify(prev)===JSON.stringify(u)?prev:u);localStorage.setItem('siprd_session',JSON.stringify(u));return true
+    } catch {return false}
+  }, [])
+  useEffect(()=>{
+    const validar=async()=>{if(!localStorage.getItem('siprd_access_token')){setUsuario(null);return}try{const u=adaptar(await apiFetch('/auth/yo'));setUsuario(prev=>JSON.stringify(prev)===JSON.stringify(u)?prev:u);localStorage.setItem('siprd_session',JSON.stringify(u))}catch{setUsuario(null)}}
+    validar();const t=setInterval(validar,45000)
+    const invalidar=()=>setUsuario(null)
+    window.addEventListener('siprd:sesion-expirada',invalidar)
+    return()=>{clearInterval(t);window.removeEventListener('siprd:sesion-expirada',invalidar)}
   }, [])
 
   const logout = useCallback(() => {
-    // TODO BACKEND: POST /api/auth/logout (si aplica)
+    apiFetch('/auth/salir',{method:'POST'}).catch(()=>{})
+    localStorage.removeItem('siprd_access_token')
     setUsuario(null)
     try {
       localStorage.removeItem('siprd_session')
@@ -79,12 +46,12 @@ export function AuthProvider({ children }) {
   }, [])
 
   const puede = useCallback(
-    (modulo) => (usuario ? (PERMISOS[usuario.rol] ?? []).includes(modulo) : false),
+    (modulo) => tienePermiso(usuario,modulo),
     [usuario]
   )
 
   const puedeAprobar = useCallback(
-    () => (usuario ? (PUEDE_APROBAR[usuario.rol] ?? false) : false),
+    () => tienePermiso(usuario,'confirmar'),
     [usuario]
   )
 
