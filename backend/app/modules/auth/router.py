@@ -51,12 +51,7 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
         .scalars()
         .first()
     )
-    if (
-        not u
-        or not u.activo
-        or not u.rol_rel.activo
-        or not verificar_contrasena(req.clave, u.password_hash)
-    ):
+    if not u or not u.activo or not u.rol_rel.activo:
         raise ErrorNoAutorizado("Usuario o contraseña incorrectos.")
     if u.rol == "REPARTIDOR" and (
         not u.clave_vigente_hasta or u.clave_vigente_hasta <= ahora()
@@ -64,6 +59,8 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
         raise ErrorNoAutorizado(
             "La clave de reparto venció. Solicite la clave de la jornada."
         )
+    if not verificar_contrasena(req.clave, u.password_hash):
+        raise ErrorNoAutorizado("Usuario o contraseña incorrectos.")
     token = crear_access_token(
         {"sub": str(u.id_usuario), "rol": u.rol, "version_sesion": u.version_sesion}
     )
