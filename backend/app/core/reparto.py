@@ -21,6 +21,21 @@ def generar_pin_diario() -> str:
     return f"{secrets.randbelow(10_000):04d}"
 
 
+def pin_reparto_es_valido(clave_cifrada: str | None) -> bool:
+    """Indica si la clave persistida corresponde al PIN operativo actual.
+
+    También permite sustituir credenciales heredadas, que antes eran claves
+    alfanuméricas, sin exigir que Distribución las renueve una por una.
+    """
+    if not clave_cifrada:
+        return False
+    try:
+        clave = cifrador().decrypt(clave_cifrada.encode()).decode()
+    except Exception:
+        return False
+    return len(clave) == 4 and clave.isdecimal()
+
+
 def cifrador():
     return Fernet(
         base64.urlsafe_b64encode(hashlib.sha256(settings.JWT_SECRET.encode()).digest())
@@ -88,6 +103,7 @@ async def asegurar_accesos(db, fecha, actor_id=None, regenerar_vehiculo=None):
             not u.clave_vigente_hasta
             or u.clave_vigente_hasta <= now
             or u.fecha_reparto != fecha
+            or not pin_reparto_es_valido(u.clave_cifrada)
             or regenerar_vehiculo == v.id_vehiculo
         ):
             # PIN operativo de cuatro dígitos. La vigencia llega hasta la

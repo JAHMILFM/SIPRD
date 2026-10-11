@@ -41,6 +41,11 @@ async def listar(
     usuario: dict = Depends(distribucion),
 ):
     response.headers["Cache-Control"] = "no-store"
+    # Al consultar la jornada actual, reemplaza automáticamente cualquier
+    # credencial heredada que no sea un PIN numérico de cuatro dígitos.
+    if fecha == datetime.now(LIMA).date():
+        await asegurar_accesos(db, fecha, int(usuario["sub"]))
+        await db.commit()
     filas = (
         await db.execute(
             select(Usuario, Vehiculo)
