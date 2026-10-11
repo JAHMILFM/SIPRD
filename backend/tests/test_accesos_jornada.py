@@ -8,6 +8,7 @@ from backend.app.core.seguridad import (
     obtener_usuario_actual,
     decodificar_token,
 )
+from backend.app.core.reparto import generar_pin_diario
 from backend.app.core.errores import ErrorNoAutorizado
 
 
@@ -20,6 +21,13 @@ class FakeDb:
 
 
 class AccesosTest(unittest.IsolatedAsyncioTestCase):
+
+    def test_pin_diario_tiene_cuatro_digitos(self):
+        for _ in range(20):
+            pin = generar_pin_diario()
+            self.assertTrue(pin.isdecimal())
+            self.assertEqual(4, len(pin))
+
     def usuario(self, version=2, hasta=None):
         return SimpleNamespace(
             id_usuario=123,

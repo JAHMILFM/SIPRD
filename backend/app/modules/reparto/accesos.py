@@ -3,14 +3,23 @@ from fastapi import APIRouter, Depends, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.core.db import get_db
-from backend.app.core.seguridad import require_roles
+from backend.app.core.seguridad import obtener_usuario_actual
 from backend.app.core.reparto import asegurar_accesos, cifrador, LIMA
 from backend.app.core.auditoria import registrar_auditoria
 from backend.app.core.errores import ErrorNoEncontrado
 from backend.app.models import Usuario, Vehiculo
 
 router = APIRouter(prefix="/accesos-reparto", tags=["Accesos de reparto"])
-distribucion = require_roles(["ASISTENTE", "JEFE"])
+ROLES_DISTRIBUCION = {"ASISTENTE", "JEFE", "ASISTENTE_DISTRIBUCION", "JEFE_DISTRIBUCION"}
+
+
+async def distribucion(usuario: dict = Depends(obtener_usuario_actual)):
+    """Las claves por placa sólo las administra Distribución con ese permiso."""
+    if usuario["rol"] not in ROLES_DISTRIBUCION or "accesos" not in usuario.get("permisos", []):
+        from backend.app.core.errores import ErrorAccesoDenegado
+
+        raise ErrorAccesoDenegado("Los accesos de reparto son exclusivos de Distribución.")
+    return usuario
 
 
 @router.post("/generar")

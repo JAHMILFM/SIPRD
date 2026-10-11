@@ -17,7 +17,7 @@ const DEMO = [
     clave: 'SiprdDemo2026!',
     nombre: 'Lesli Pomalaya',
     rol: 'Asistente de Distribución',
-    desc: 'Tanteo, ruteo en vivo y cobranzas',
+    desc: 'Tanteo y ruteo en vivo',
     ini: 'LP',
     color: '#2563EB'
   },
@@ -149,7 +149,7 @@ export default function Login() {
           </div>
 
           <h1 className="login-title-new">Ingreso al Sistema SIPRD</h1>
-          <p className="login-sub-new">Ingresa con tus usuario y contraseña para acceder a los módulos de despacho.</p>
+          <p className="login-sub-new">Ingresa con tu usuario y contraseña. Reparto usa la placa del vehículo y su PIN diario de 4 dígitos.</p>
 
           <form onSubmit={handleSubmit} className="login-form-new" noValidate>
             <div className="login-field-new">
@@ -166,7 +166,7 @@ export default function Login() {
                   setError('')
                 }}
                 onBlur={() => setTocado(p => ({ ...p, usuario: true }))}
-                placeholder="ej. dhuerta o dhuerta@alfadistribuidores.com"
+                placeholder="Usuario, correo o placa del vehículo"
                 className={userInvalido ? 'is-invalid' : ''}
                 aria-required="true"
                 aria-invalid={userInvalido}
@@ -191,7 +191,7 @@ export default function Login() {
                     setError('')
                   }}
                   onBlur={() => setTocado(p => ({ ...p, clave: true }))}
-                  placeholder="••••••••"
+                  placeholder="Contraseña o PIN de 4 dígitos"
                   className={claveInvalida ? 'is-invalid' : ''}
                   style={{ width: '100%', paddingRight: 40 }}
                   aria-required="true"

@@ -32,13 +32,18 @@ OFICINA = [
     "accesos",
 ]
 PREDETERMINADOS = {
-    "ASISTENTE_DISTRIBUCION": OFICINA + ["cobranzas"],
-    "JEFE_DISTRIBUCION": OFICINA + ["cobranzas", "registros"],
-    "ASISTENTE": OFICINA + ["cobranzas"],
-    "JEFE": OFICINA + ["cobranzas", "registros"],
+    # Cobranzas pertenece a Tesorería. Distribución sólo planifica, confirma
+    # rutas y consulta sus resultados; no puede ver ni validar pagos.
+    "ASISTENTE_DISTRIBUCION": OFICINA,
+    "JEFE_DISTRIBUCION": OFICINA + ["registros"],
+    "ASISTENTE": OFICINA,
+    "JEFE": OFICINA + ["registros"],
     "TESORERIA": ["cobranzas", "validar_cobros", "cerrar_pedidos", "pedidos"],
     "REPARTIDOR": ["reparto", "cerrar_pedidos"],
-    "ADMINISTRADOR": [p for p in CATALOGO if p not in ("accesos", "reparto")],
+    "ADMINISTRADOR": [
+        "inicio", "config", "registros", "vehiculos", "restricciones",
+        "clientes", "pedidos", "usuarios", "roles",
+    ],
 }
 
 

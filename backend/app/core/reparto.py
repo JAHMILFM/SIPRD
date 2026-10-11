@@ -16,6 +16,11 @@ from backend.app.core.auditoria import registrar_auditoria
 LIMA = ZoneInfo("America/Lima")
 
 
+def generar_pin_diario() -> str:
+    """Genera un PIN decimal de cuatro dígitos, conservando ceros iniciales."""
+    return f"{secrets.randbelow(10_000):04d}"
+
+
 def cifrador():
     return Fernet(
         base64.urlsafe_b64encode(hashlib.sha256(settings.JWT_SECRET.encode()).digest())
@@ -85,12 +90,9 @@ async def asegurar_accesos(db, fecha, actor_id=None, regenerar_vehiculo=None):
             or u.fecha_reparto != fecha
             or regenerar_vehiculo == v.id_vehiculo
         ):
-            clave = "".join(
-                secrets.choice(
-                    "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789"
-                )
-                for _ in range(12)
-            )
+            # PIN operativo de cuatro dígitos. La vigencia llega hasta la
+            # medianoche de Lima y una renovación invalida sesiones previas.
+            clave = generar_pin_diario()
             u.password_hash = hash_contrasena(clave)
             u.clave_cifrada = cifrador().encrypt(clave.encode()).decode()
             u.clave_vigente_hasta = hasta

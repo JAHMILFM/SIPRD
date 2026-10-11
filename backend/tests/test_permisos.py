@@ -12,6 +12,16 @@ class PermisosTest(unittest.TestCase):
             ),
         )
 
+    def test_cobranzas_es_exclusiva_de_tesoreria(self):
+        asistente = permisos_rol(
+            SimpleNamespace(nombre="ASISTENTE_DISTRIBUCION", permisos=None)
+        )
+        jefe = permisos_rol(SimpleNamespace(nombre="JEFE_DISTRIBUCION", permisos=None))
+        tesoreria = permisos_rol(SimpleNamespace(nombre="TESORERIA", permisos=None))
+        self.assertNotIn("cobranzas", asistente)
+        self.assertNotIn("cobranzas", jefe)
+        self.assertIn("cobranzas", tesoreria)
+
     def test_revocar_todos_no_restaura_defaults(self):
         self.assertEqual(
             permisos_rol(SimpleNamespace(nombre="ASISTENTE_DISTRIBUCION", permisos=[])),

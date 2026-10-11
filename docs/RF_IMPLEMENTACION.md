@@ -21,7 +21,7 @@ Rama Git: `feature/rf-interfaz-original`. Base conectada: rama Neon `siprd-norma
 | RF-COB-05 | Registrar comentario de observación, visible para reparto; corregir y reenviar a pendiente. |
 | RF-COB-06 | Cerrar solamente con entrega registrada, totalidad del importe y todos los cobros conformes. La entrega física y el cierre financiero se distinguen. |
 
-La administración permite registrar, consultar, actualizar y desactivar usuarios. El administrador modifica permisos en Configuración → Usuarios y permisos. Los permisos se comprueban en cada petición del backend; no dependen de ocultar botones. La identidad administrativa permanece reservada al administrador. El acceso de reparto está asociado a la placa y limita las operaciones a su vehículo y jornada.
+La administración permite registrar, consultar, actualizar y desactivar usuarios. El administrador modifica permisos en Configuración → Usuarios y permisos. Los permisos se comprueban en cada petición del backend; no dependen de ocultar botones. Cobranzas es exclusivo de Tesorería: Asistente y Jefe de Distribución no ven el módulo ni pueden consultar su API. El acceso de reparto está asociado a la placa y limita las operaciones a su vehículo y jornada.
 
 ## Planificación por zonas
 
@@ -35,7 +35,7 @@ La demostración del 10/10/2026 contiene 72 pedidos ficticios en PostgreSQL y se
 
 1. Iniciar FastAPI en el puerto 8000 y Vite en 5173, desde la raíz del repositorio.
 2. Ingresar como `demo.asistente` o `demo.jefe`. Consultar fecha 2026-10-10, las rutas y las flechas. El orden se guarda al pulsarlas; no se pueden mover paradas atendidas, en camino o bloqueadas. Los cambios de orden dejan el antes y el después en auditoría.
-3. Consultar la contraseña vigente desde Inicio → Accesos de reparto → Mostrar. Cada clave dura hasta medianoche de Lima, se renueva diariamente y permite entrar usando la placa como usuario. Renovar invalida las sesiones anteriores.
+3. Consultar el PIN vigente desde Inicio → Accesos de reparto → Mostrar. Asistente y Jefe de Distribución administran estos accesos; cada PIN tiene cuatro dígitos, dura hasta medianoche de Lima y permite entrar usando la placa como usuario. Renovar invalida las sesiones anteriores.
 4. En una sesión de navegador separada ingresar con la placa. Abrir un pedido propio, subir la evidencia de entrega y registrar un pago con su comprobante.
 5. En otra sesión ingresar como `demo.tesoreria`. Consultar el comprobante, observarlo indicando el motivo, corregirlo desde reparto y confirmarlo desde Tesorería después del contraste. El pedido solo puede cerrarse al completar el importe validado. Descargar el arqueo en Excel.
 6. Ingresar como `demo.admin`; gestionar usuarios y guardar los permisos de los demás roles. Retirar un permiso debe bloquear la operación aunque exista una sesión abierta; el menú se actualiza al renovar el perfil.
@@ -75,7 +75,7 @@ Para generar otra jornada ficticia: `python -m backend.scripts.preparar_demo_zon
 
 ## Base de datos y límites operativos
 
-Las migraciones `backend/migrations/002_reparto_zonas.sql` y `003_permisos_roles.sql` son aditivas y ya están aplicadas a la rama normalizada de este equipo. Un integrante que use otra base con el modelo de 13 tablas debe aplicarlas mediante conexión directa y configurar su `.env`; actualizar el código Git no actualiza automáticamente su base local. No ejecutar otra vez el script que recrea el esquema para instalar estas mejoras.
+Las migraciones `backend/migrations/002_reparto_zonas.sql`, `003_permisos_roles.sql` y `004_politica_roles_cobranzas_y_pin.sql` son aditivas y ya están aplicadas a la rama normalizada de este equipo. Un integrante que use otra base con el modelo de 13 tablas debe aplicarlas mediante conexión directa y configurar su `.env`; actualizar el código Git no actualiza automáticamente su base local. No ejecutar otra vez el script que recrea el esquema para instalar estas mejoras.
 
 Los comprobantes y evidencias se guardan en `backend/uploads`; PostgreSQL conserva sus referencias. Para que reparto y Tesorería vean los mismos archivos, todos deben utilizar el mismo backend. Compartir únicamente la base Neon entre backends locales independientes no comparte fotografías. Esta carpeta debe conservarse al desplegar y no se sube a Git. Para probar desde un teléfono en la misma red, servir Vite con `npm run dev -- --host 0.0.0.0` y abrir la IP del equipo; la conexión a la API utiliza el proxy de Vite.
 
