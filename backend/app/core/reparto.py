@@ -74,19 +74,49 @@ async def asegurar_accesos(db, fecha, actor_id=None, regenerar_vehiculo=None):
         .one()
     )
     now = datetime.now(LIMA)
-    if fecha != now.date():
+    # No se preparan accesos por adelantado para jornadas futuras. Las jornadas
+    # pasadas se corrigen si conservan claves heredadas, pero permanecen vencidas.
+    if fecha > now.date():
         return vehiculos
-    hasta = datetime.combine(now.date() + timedelta(days=1), time.min, LIMA)
-    for v in vehiculos:
-        u = (
-            (
-                await db.execute(
-                    select(Usuario).where(Usuario.id_vehiculo == v.id_vehiculo)
-                )
+    hasta = datetime.combine(fecha + timedelta(days=1), time.min, LIMA)
+
+    # La jornada usa un único PIN: la placa identifica al repartidor y el PIN
+    # diario habilita el acceso. Si hay claves antiguas, faltantes o distintas,
+    # se rota toda la jornada en una sola operación.
+    vehiculo_ids = [v.id_vehiculo for v in vehiculos]
+    usuarios = (
+        (
+            await db.execute(
+                select(Usuario).where(Usuario.id_vehiculo.in_(vehiculo_ids))
             )
-            .scalars()
-            .first()
         )
+        .scalars()
+        .all()
+        if vehiculo_ids
+        else []
+    )
+    usuarios_por_vehiculo = {u.id_vehiculo: u for u in usuarios}
+    pines_validos = []
+    requiere_rotacion = regenerar_vehiculo is not None
+    for v in vehiculos:
+        u = usuarios_por_vehiculo.get(v.id_vehiculo)
+        if (
+            not u
+            or not u.clave_vigente_hasta
+            or u.clave_vigente_hasta <= now
+            or u.fecha_reparto != fecha
+            or not pin_reparto_es_valido(u.clave_cifrada)
+        ):
+            requiere_rotacion = True
+            continue
+        pines_validos.append(cifrador().decrypt(u.clave_cifrada.encode()).decode())
+
+    if len(set(pines_validos)) != 1:
+        requiere_rotacion = True
+    pin_jornada = generar_pin_diario() if requiere_rotacion else pines_validos[0]
+
+    for v in vehiculos:
+        u = usuarios_por_vehiculo.get(v.id_vehiculo)
         if not u:
             u = Usuario(
                 id_rol=rol.id_rol,
@@ -99,18 +129,11 @@ async def asegurar_accesos(db, fecha, actor_id=None, regenerar_vehiculo=None):
                 version_sesion=1,
             )
             db.add(u)
-        if (
-            not u.clave_vigente_hasta
-            or u.clave_vigente_hasta <= now
-            or u.fecha_reparto != fecha
-            or not pin_reparto_es_valido(u.clave_cifrada)
-            or regenerar_vehiculo == v.id_vehiculo
-        ):
-            # PIN operativo de cuatro dígitos. La vigencia llega hasta la
-            # medianoche de Lima y una renovación invalida sesiones previas.
-            clave = generar_pin_diario()
-            u.password_hash = hash_contrasena(clave)
-            u.clave_cifrada = cifrador().encrypt(clave.encode()).decode()
+        if requiere_rotacion:
+            # PIN operativo común de cuatro dígitos. La vigencia llega hasta
+            # medianoche de Lima y su renovación invalida las sesiones previas.
+            u.password_hash = hash_contrasena(pin_jornada)
+            u.clave_cifrada = cifrador().encrypt(pin_jornada.encode()).decode()
             u.clave_vigente_hasta = hasta
             u.fecha_reparto = fecha
             u.activo = True
@@ -122,7 +145,7 @@ async def asegurar_accesos(db, fecha, actor_id=None, regenerar_vehiculo=None):
                 "acceso_reparto",
                 u.id_usuario,
                 valores_despues={
-                    "evento": "CLAVE_JORNADA_GENERADA",
+                    "evento": "PIN_JORNADA_GENERADO",
                     "placa": v.placa,
                     "fecha_reparto": fecha.isoformat(),
                     "vigente_hasta": hasta.isoformat(),
