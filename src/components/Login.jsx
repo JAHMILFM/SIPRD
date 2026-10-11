@@ -22,6 +22,15 @@ const DEMO = [
     color: '#2563EB'
   },
   {
+    usuario: 'demo.tesoreria',
+    clave: 'SiprdDemo2026!',
+    nombre: 'Tesorería',
+    rol: 'Tesorería',
+    desc: 'Validación de pagos y arqueo',
+    ini: 'TS',
+    color: '#0F766E'
+  },
+  {
     usuario: 'demo.admin',
     clave: 'SiprdDemo2026!',
     nombre: 'Área de TI',
