@@ -7,6 +7,7 @@ import { useAudit } from '../context/AuditContext'
 import { useToast } from '../context/ToastContext'
 import RouteMap from './RouteMap'
 import ErrorBoundary from './ErrorBoundary'
+import Modal from './common/Modal'
 
 /**
  * Módulo Rutas — gestión en vivo.
@@ -63,6 +64,7 @@ export default function Rutas() {
   const [rutaActiva, setRutaActiva] = useState(() => rutas[0]?.id ?? 'R1')
   const [guardado, setGuardado]     = useState(false)
   const [filtroEstado, setFiltroEstado] = useState('todos') // 'todos' | 'pendiente' | 'en_camino' | 'entregado'
+  const [evidencias, setEvidencias] = useState(null)
 
   useEffect(()=>{setRutas(RUTAS_ACTIVAS);setRutaActiva(prev=>RUTAS_ACTIVAS.some(r=>r.id===prev)?prev:RUTAS_ACTIVAS[0]?.id)},[operacion.plan,operacion.pedidos,operacion.vehiculos])
   const ruta = rutas.find(r => r.id === rutaActiva) ?? rutas[0]
@@ -102,6 +104,20 @@ export default function Rutas() {
   const confirmar=async()=>{
     try{const raw=await apiFetch(`/planificaciones/${operacion.plan.id}/confirmar`,{method:'POST'});operacion.setPlan(raw);toast.success('Nueva versión confirmada.')}catch(e){toast.error(e.message)}
   }
+  const abrirEvidencias=async(p)=>{
+    try{
+      const lista=await apiFetch(`/reparto/paradas/${p.id}/evidencias`)
+      const archivos=await Promise.all(lista.map(async e=>{
+        const respuesta=await apiFetch(`/reparto/evidencias/${e.id}/archivo`)
+        return {...e, url:URL.createObjectURL(await respuesta.blob())}
+      }))
+      setEvidencias({parada:p,archivos})
+    }catch(e){toast.error(e.message)}
+  }
+  const cerrarEvidencias=()=>{
+    evidencias?.archivos.forEach(e=>URL.revokeObjectURL(e.url))
+    setEvidencias(null)
+  }
   if(!ruta)return <div className="card" style={{padding:20}}>No hay rutas guardadas para la fecha seleccionada.</div>
 
   // ── Métricas y filtrado (Soporte dual interfaz y esquema siprd) ──
@@ -120,6 +136,10 @@ export default function Rutas() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+      {evidencias&&<Modal isOpen title="Evidencias de entrega" subtitle={`${evidencias.parada.cliente} · Parada ${evidencias.parada.orden}`} onClose={cerrarEvidencias} maxWidth={760}>
+        {evidencias.archivos.length===0?<p>No hay fotografías registradas para esta entrega.</p>:<div className="evidencias-grid">{evidencias.archivos.map(e=><figure key={e.id} className="evidencia-item">{e.tipo?.startsWith('image/')?<img src={e.url} alt={`Evidencia de entrega: ${e.nombre}`}/>:<a href={e.url} target="_blank" rel="noreferrer">Abrir archivo adjunto</a>}<figcaption>{e.nombre}</figcaption></figure>)}</div>}
+      </Modal>}
 
       {operacion.plan?.estado!=='CONFIRMADA' && <button className="btn green" onClick={confirmar} disabled={ocupado}>Confirmar planificación revisada</button>}
       {/* Selector de rutas con affordances visuales claros */}
@@ -316,9 +336,7 @@ export default function Rutas() {
                         </div>
                       )}
                       {inmutable && (
-                        <span style={{ display: 'block', textAlign: 'center', color: '#64748b', fontSize: 11, fontWeight: 500 }}>
-                          Entregado
-                        </span>
+                        <button className="btn out" style={{fontSize:11,padding:'5px 8px'}} onClick={()=>abrirEvidencias(p)}>📷 Evidencias</button>
                       )}
                     </td>
                   </tr>

@@ -1,4 +1,6 @@
+import os
 from fastapi import APIRouter, Depends, UploadFile, File, Form
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from backend.app.core.db import get_db
 from backend.app.core.seguridad import require_roles
@@ -7,6 +9,7 @@ from backend.app.core.reparto import autorizar_ruta, autorizar_parada
 from backend.app.core.almacenamiento import guardar_archivo
 from backend.app.core.auditoria import registrar_auditoria
 from backend.app.core.tiempo import ahora
+from backend.app.core.config import settings
 from backend.app.models import (
     Ruta,
     ParadaRuta,
@@ -21,6 +24,7 @@ from backend.app.models import (
 
 router = APIRouter(prefix="/reparto", tags=["Reparto"])
 auth = require_roles(["REPARTIDOR", "ASISTENTE", "JEFE", "ADMINISTRADOR"])
+consulta_evidencias = require_roles(["ASISTENTE", "JEFE", "ADMINISTRADOR"])
 
 
 @router.get("/mis-rutas")
@@ -167,6 +171,50 @@ async def evidencia(
     return {
         "mensaje": "Entrega registrada. El cierre financiero requiere validación de Tesorería."
     }
+
+
+@router.get("/paradas/{parada_id}/evidencias")
+async def listar_evidencias(
+    parada_id: int,
+    db=Depends(get_db),
+    usuario=Depends(consulta_evidencias),
+):
+    """Evidencias físicas visibles para Distribución, no para Tesorería."""
+    await autorizar_parada(db, parada_id, usuario)
+    evidencias = (
+        await db.execute(
+            select(EvidenciaEntrega)
+            .where(EvidenciaEntrega.id_parada == parada_id)
+            .order_by(EvidenciaEntrega.fecha_registro.desc())
+        )
+    ).scalars().all()
+    return [
+        {
+            "id": e.id_evidencia,
+            "nombre": e.nombre_archivo,
+            "tipo": e.tipo_mime,
+            "descripcion": e.descripcion,
+            "fecha": e.fecha_registro,
+        }
+        for e in evidencias
+    ]
+
+
+@router.get("/evidencias/{evidencia_id}/archivo")
+async def ver_archivo_evidencia(
+    evidencia_id: int,
+    db=Depends(get_db),
+    usuario=Depends(consulta_evidencias),
+):
+    evidencia = await db.get(EvidenciaEntrega, evidencia_id)
+    if not evidencia:
+        raise ErrorReglaNegocio("EVIDENCIA_NO_ENCONTRADA", "La evidencia no existe.")
+    await autorizar_parada(db, evidencia.id_parada, usuario)
+    base = os.path.abspath(settings.UPLOAD_DIR)
+    archivo = os.path.abspath(os.path.join(base, evidencia.url_archivo))
+    if not archivo.startswith(base + os.sep) or not os.path.isfile(archivo):
+        raise ErrorReglaNegocio("ARCHIVO_NO_DISPONIBLE", "El archivo de evidencia no está disponible.")
+    return FileResponse(archivo, media_type=evidencia.tipo_mime, filename=evidencia.nombre_archivo)
 
 
 @router.post("/paradas/{parada_id}/incidencias", status_code=201)
