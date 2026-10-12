@@ -279,7 +279,7 @@ function AppInterna({ usuario, puede, puedeAprobar, log }) {
   const [titulo, subtitulo] = TITULOS[modulo] ?? ['', '']
 
   return (
-    <div className="app">
+    <div className={puede('reparto') ? 'app app-reparto' : 'app'}>
       {/* Centro de Ayuda y Heurísticas (Heurística #10) */}
       {selector && <Modal isOpen title="Seleccionar vehículos" onClose={()=>setSelector(false)}><div className="tw">{disponibles.map(v=><label key={v.id} style={{display:'block',padding:8}}><input type="checkbox" checked={flota.some(x=>x.id===v.id)} onChange={e=>setElegidos(e.target.checked?[...flota.map(x=>x.id),v.id]:flota.filter(x=>x.id!==v.id).map(x=>x.id))}/> {v.placa} · {v.capacidad_kg} kg · {v.capacidad_m3} m³</label>)}</div><button className="btn blue" onClick={()=>{setSelector(false);recalcular()}}>Aplicar y recalcular</button></Modal>}
       <HelpDrawer isOpen={helpOpen} onClose={() => setHelpOpen(false)} />
